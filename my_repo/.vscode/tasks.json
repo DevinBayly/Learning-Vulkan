@@ -6,7 +6,7 @@
         {
             "label": "build scons",
             "type": "shell",
-            "command": "scons",
+            "command": "scons_build",
             "problemMatcher": [
                 "$gcc"
             ],
