@@ -9,7 +9,7 @@ struct LayerProperties
     vector<VkExtensionProperties> extensions;
 };
 
-vector<const char *> layersRequested = {"VK_LAYER_LUNARG_monitor", "VK_LAYER_KHRONOS_validation"};
+vector<const char *> layersRequested = {"VK_LAYER_LUNARG_api_dump", "VK_LAYER_LUNARG_monitor", "VK_LAYER_KHRONOS_validation"};
 
 // vector<const char *> extensionsRequested = {VK_KHR_SURFACE_EXTENSION_NAME};
 
@@ -91,13 +91,13 @@ int main(int argc, char **argv, char **envp)
 
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pNext = &debugCreateInfo;
+    appInfo.pNext = NULL;
     appInfo.pApplicationName = "first vulkan from book";
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 3, 216);
 
     VkInstanceCreateInfo instInfo{};
     instInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    instInfo.pNext = VK_NULL_HANDLE;
+    instInfo.pNext = &debugCreateInfo;
     instInfo.flags = 0;
     instInfo.pApplicationInfo = &appInfo;
 
@@ -156,9 +156,6 @@ int main(int argc, char **argv, char **envp)
         cout << "extension prop name is  " << exprop.extensionName << endl;
     }
 
-    // looking at the memory properties now
-    VkPhysicalDeviceMemoryProperties memprops{};
-    vkGetPhysicalDeviceMemoryProperties(selectedGpu, &memprops);
     // we must first create a variable holding the queue information for the physical device
     uint32_t number_queues;
     vector<VkQueueFamilyProperties> fam_props{};
@@ -212,5 +209,90 @@ int main(int argc, char **argv, char **envp)
         cout << "nnope no logical device" << endl;
         return -1;
     };
+
+    // working on the command buffer stuff
+    VkCommandPoolCreateInfo cpoolInfo{};
+    cpoolInfo.sType  = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    cpoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    cpoolInfo.queueFamilyIndex = graphicsQueueIndex;
+
+    // use the info to create a command pool
+    VkCommandPool cPool;
+    result = vkCreateCommandPool(device,&cpoolInfo,NULL,&cPool);
+    cout << result << endl;
+
+    // make an allocation info
+
+    VkCommandBufferAllocateInfo cAllocInfo{};
+    cAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cAllocInfo.commandPool = cPool;
+    cAllocInfo.commandBufferCount =1;
+
+    VkCommandBuffer cb;
+    result = vkAllocateCommandBuffers(device,&cAllocInfo,&cb);
+    cout << "command buffer result is " << result  << endl;
+
+    // buffers get recorded with commands between "begin" and "end " 
+
+    // then they are submittedto queues 
+    VkQueue q;
+    vkGetDeviceQueue(device,0,0,&q);
+
+    // working with device memory and host  
+
+    VkPhysicalDeviceMemoryProperties deviceMemProps;
+    vkGetPhysicalDeviceMemoryProperties(selectedGpu,&deviceMemProps);
+
+    // allocating memory for fun
+    // create a buffer info
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = 1024*20;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;// for instance this means the buffer is the destination
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    //create a buffer
+
+    VkBuffer demoBuffer;
+    vkCreateBuffer(device,&bufferInfo,NULL,&demoBuffer);
+    // 
+    // now we can get requirements to use for allocation
+    // 
+    VkMemoryRequirements memReqs;
+    vkGetBufferMemoryRequirements(device,demoBuffer,&memReqs);
+    VkMemoryAllocateInfo mAllocInfo{};
+    mAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    mAllocInfo.allocationSize = memReqs.size;
+    
+    mAllocInfo.memoryTypeIndex =0;// it's also possible to iterate over the device memory props and match the 
+
+    VkDeviceMemory devMem;
+    vkAllocateMemory(device,&mAllocInfo,NULL,&devMem);
+
+    // in order for host to use memory it must map and eventually un map
+    // this will get covered later in the book so I'm skipping now
+
+
+    // making images!
+    // starts with just a declaration of it and no memory to back it up
+    VkImage myImg;
+// ?? I wonder what happens when we don't fill in certain fields of teh struct
+    VkImageCreateInfo imgCreateInfo{};
+    imgCreateInfo.sType =VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imgCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+    // usage determines whether it is a transfer dest/src or color attachment drawn on by a render pass
+
+    // get the memory requirements in a similar way as what was done for the buffer above
+
+
+    VkMemoryRequirements imgMemReq;
+    vkGetImageMemoryRequirements(device,&myImg,&imgMemReq);
+    // then we have to bind the memory
+
+    // then we set the image layout
+
+
+    // then we create the image views because we don't actually work directly with images
+    
+    // ?? 
     cout << "Done" << endl;
 }
