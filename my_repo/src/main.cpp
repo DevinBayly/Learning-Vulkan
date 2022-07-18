@@ -135,6 +135,7 @@ int main(int argc, char **argv, char **envp)
         vkGetPhysicalDeviceProperties(gpuDev, &props);
         cout << "device's name is " << props.deviceName << endl;
         string name = string(props.deviceName);
+        // this passes when the text llvm isn't in the name
         if (name.find("llvm") == string::npos)
         {
             selectedGpu = gpuDev;
@@ -212,13 +213,13 @@ int main(int argc, char **argv, char **envp)
 
     // working on the command buffer stuff
     VkCommandPoolCreateInfo cpoolInfo{};
-    cpoolInfo.sType  = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    cpoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     cpoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     cpoolInfo.queueFamilyIndex = graphicsQueueIndex;
 
     // use the info to create a command pool
     VkCommandPool cPool;
-    result = vkCreateCommandPool(device,&cpoolInfo,NULL,&cPool);
+    result = vkCreateCommandPool(device, &cpoolInfo, NULL, &cPool);
     cout << result << endl;
 
     // make an allocation info
@@ -226,73 +227,164 @@ int main(int argc, char **argv, char **envp)
     VkCommandBufferAllocateInfo cAllocInfo{};
     cAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     cAllocInfo.commandPool = cPool;
-    cAllocInfo.commandBufferCount =1;
+    cAllocInfo.commandBufferCount = 1;
 
     VkCommandBuffer cb;
-    result = vkAllocateCommandBuffers(device,&cAllocInfo,&cb);
-    cout << "command buffer result is " << result  << endl;
+    result = vkAllocateCommandBuffers(device, &cAllocInfo, &cb);
+    cout << "command buffer result is " << result << endl;
 
-    // buffers get recorded with commands between "begin" and "end " 
+    // buffers get recorded with commands between "begin" and "end "
 
-    // then they are submittedto queues 
+    // then they are submittedto queues
     VkQueue q;
-    vkGetDeviceQueue(device,0,0,&q);
+    vkGetDeviceQueue(device, 0, 0, &q);
 
-    // working with device memory and host  
+    // working with device memory and host
 
     VkPhysicalDeviceMemoryProperties deviceMemProps;
-    vkGetPhysicalDeviceMemoryProperties(selectedGpu,&deviceMemProps);
+    vkGetPhysicalDeviceMemoryProperties(selectedGpu, &deviceMemProps);
+
+    //  making vertex information
+    struct ColorVert
+    {
+
+        float x, y, z, w;
+        float r, g, b, a;
+    };
+
+    const vector<ColorVert> triangleData = {
+        {0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f},
+        {1.0f, -1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f},
+        {-1.0f, -1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f}};
 
     // allocating memory for fun
     // create a buffer info
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = 1024*20;
-    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;// for instance this means the buffer is the destination
+    bufferInfo.size = sizeof(triangleData[0]) * triangleData.size();
+    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT; // for instance this means the buffer is the destination
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    //create a buffer
+    // create a buffer
 
     VkBuffer demoBuffer;
-    vkCreateBuffer(device,&bufferInfo,NULL,&demoBuffer);
-    // 
+    vkCreateBuffer(device, &bufferInfo, NULL, &demoBuffer);
+    //
     // now we can get requirements to use for allocation
-    // 
+    //
     VkMemoryRequirements memReqs;
-    vkGetBufferMemoryRequirements(device,demoBuffer,&memReqs);
+    vkGetBufferMemoryRequirements(device, demoBuffer, &memReqs);
     VkMemoryAllocateInfo mAllocInfo{};
     mAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     mAllocInfo.allocationSize = memReqs.size;
-    
-    mAllocInfo.memoryTypeIndex =0;// it's also possible to iterate over the device memory props and match the 
+
+    mAllocInfo.memoryTypeIndex = 0; // it's also possible to iterate over the device memory props and match the
 
     VkDeviceMemory devMem;
-    vkAllocateMemory(device,&mAllocInfo,NULL,&devMem);
+    vkAllocateMemory(device, &mAllocInfo, NULL, &devMem);
 
     // in order for host to use memory it must map and eventually un map
     // this will get covered later in the book so I'm skipping now
 
-
     // making images!
     // starts with just a declaration of it and no memory to back it up
     VkImage myImg;
-// ?? I wonder what happens when we don't fill in certain fields of teh struct
     VkImageCreateInfo imgCreateInfo{};
-    imgCreateInfo.sType =VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imgCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imgCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+    imgCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imgCreateInfo.extent.depth = 1;
+    imgCreateInfo.extent.height = 256;
+    imgCreateInfo.extent.width = 256;
+    imgCreateInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    imgCreateInfo.format = VK_FORMAT_R8G8B8A8_SRGB; // this means the numbers will be 0-256 not 0-1 UNORM
+    imgCreateInfo.mipLevels = 1;
+    imgCreateInfo.queueFamilyIndexCount = 0;
+    imgCreateInfo.arrayLayers = 1;
+    imgCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imgCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imgCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imgCreateInfo.pNext = NULL;
     // usage determines whether it is a transfer dest/src or color attachment drawn on by a render pass
+    vkCreateImage(device, &imgCreateInfo, nullptr, &myImg);
 
     // get the memory requirements in a similar way as what was done for the buffer above
 
-
     VkMemoryRequirements imgMemReq;
-    vkGetImageMemoryRequirements(device,&myImg,&imgMemReq);
+    vkGetImageMemoryRequirements(device, myImg, &imgMemReq);
     // then we have to bind the memory
 
+    VkMemoryAllocateInfo colImgAllocInfo;
+    colImgAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    colImgAllocInfo.allocationSize = imgMemReq.size;
+    colImgAllocInfo.memoryTypeIndex = 0; // there's only one type of mem on this card
+    colImgAllocInfo.pNext = NULL;
+    VkDeviceMemory imgMem;
+    vkAllocateMemory(device, &colImgAllocInfo, NULL, &imgMem);
     // then we set the image layout
+    vkBindImageMemory(device, myImg, imgMem, 0);
 
+    // now we have to make a view in order to use it in the pipeline
+    VkImageView imView;
+    VkImageViewCreateInfo imviewCreateInfo;
 
-    // then we create the image views because we don't actually work directly with images
-    
-    // ?? 
+    imviewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    imviewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+
+    imviewCreateInfo.format = imgCreateInfo.format;
+    imviewCreateInfo.subresourceRange = {};
+    imviewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    imviewCreateInfo.subresourceRange.baseMipLevel = 0;
+    imviewCreateInfo.subresourceRange.levelCount = 1;
+    imviewCreateInfo.subresourceRange.baseArrayLayer = 0;
+    imviewCreateInfo.subresourceRange.layerCount = 1;
+    imviewCreateInfo.pNext = NULL;
+    imviewCreateInfo.image = myImg;
+    imviewCreateInfo.flags = 0;
+    imviewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_R;
+    imviewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_G;
+    imviewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_B;
+    imviewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_A;
+    vkCreateImageView(device, &imviewCreateInfo, NULL, &imView);
+
+    /// now we are doing stuff with rendering!!
+    // to create a render pass you need attachments and render subpasses
+    // attachment descriptions first
+    VkAttachmentDescription attachmentDesc{};
+
+    attachmentDesc.format = imviewCreateInfo.format;
+    attachmentDesc.samples = VK_SAMPLE_COUNT_1_BIT;
+    // how contents are treated at the beginning of pass
+    attachmentDesc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // instead of clear could be LOAD and that keeps content from prev pass
+
+    // how contents are treated at the end of the subpass
+    attachmentDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachmentDesc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachmentDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachmentDesc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachmentDesc.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
+    // make a reference
+    VkAttachmentReference colorRef = {0, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL};
+    // subpasses can help preserve attachments data so that they can be used in multiple passes
+    VkSubpassDescription subpassDesc{};
+    subpassDesc.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpassDesc.colorAttachmentCount = 1;
+    subpassDesc.pColorAttachments = &colorRef;
+
+    // now we have all we need in order to make the render pass
+
+    VkRenderPassCreateInfo rpInfo{};
+    rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    rpInfo.pNext = NULL;
+    rpInfo.attachmentCount = 1;
+    rpInfo.pAttachments = &attachmentDesc;
+    rpInfo.subpassCount = 1;
+    rpInfo.pSubpasses = &subpassDesc;
+    rpInfo.dependencyCount = 0;
+    rpInfo.pDependencies = NULL;
+
+    VkRenderPass rp;
+    vkCreateRenderPass(device, &rpInfo, NULL, &rp);
+
     cout << "Done" << endl;
 }
