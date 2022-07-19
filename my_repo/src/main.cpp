@@ -1,5 +1,9 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <vector>
 using namespace std;
@@ -385,6 +389,162 @@ int main(int argc, char **argv, char **envp)
 
     VkRenderPass rp;
     vkCreateRenderPass(device, &rpInfo, NULL, &rp);
+
+//  framebuffer
+
+    VkFramebufferCreateInfo frameCreateInfo{};
+    frameCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    frameCreateInfo.renderPass = rp;
+    frameCreateInfo.attachmentCount =1;
+    frameCreateInfo.pAttachments = &imView; 
+    frameCreateInfo.width = imgCreateInfo.extent.width;
+    frameCreateInfo.height = imgCreateInfo.extent.height;
+    frameCreateInfo.layers = 1;
+
+    VkFramebuffer fb;
+
+    vkCreateFramebuffer(device,&frameCreateInfo,NULL,&fb);
+
+
+
+    // now we are on to pipeline stuff I think
+
+    VkDescriptorSetLayoutBinding setLayoutBinding{};
+    // ?? what were descriptors about again because they are different than descriptions..?
+    // these are things like collections of descriptors passed to the shader code. so how we make uniforms 
+    // descriptor set layouts are collections of these descriptor sets
+    VkDescriptorSetLayout dsl;
+    VkDescriptorSetLayoutCreateInfo setLayoutCreateInfo{};
+    
+    setLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    setLayoutCreateInfo.pNext = NULL;
+    setLayoutCreateInfo.pBindings = &setLayoutBinding;
+    setLayoutCreateInfo.bindingCount = 1;
+
+    vkCreateDescriptorSetLayout(device,&setLayoutCreateInfo,NULL,&dsl);
+
+
+    // in order to  access the descriptor set layoout we need a pipeline layout
+
+   VkPipelineLayoutCreateInfo pipelineLayoutCreate{}; 
+   pipelineLayoutCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   // ?? why arent' we setting layouts on the pipeline here?
+   // is it because we are using push constant instead of actual shader resources like uniforms?
+    pipelineLayoutCreate.pSetLayouts =NULL;
+    pipelineLayoutCreate.setLayoutCount = 0;
+
+    // here's the first push constant we've used
+    VkPushConstantRange pushConstantRange {};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.size = sizeof(glm::mat4);
+    pushConstantRange.offset = 0;
+
+
+    // set the push range on the pipeline layout
+
+    pipelineLayoutCreate.pushConstantRangeCount = 1;
+    pipelineLayoutCreate.pPushConstantRanges = &pushConstantRange;
+    VkPipelineLayout pipelineLayout;
+    vkCreatePipelineLayout(device,&pipelineLayoutCreate,NULL,&pipelineLayout);
+
+    // create a cache for reasons
+
+    VkPipelineCacheCreateInfo plineCacheCreate{};
+
+    plineCacheCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+
+    VkPipelineCache plineCache;
+    vkCreatePipelineCache(device,&plineCacheCreate,NULL,&plineCache);
+
+    // make the actual pipeline now
+    // set up the fixed functions used in the pipeline
+    // these allow us to control the hardware settings of the physical device
+    // defines the primitive topology
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyState {};
+    inputAssemblyState.sType  = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+
+    inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssemblyState.flags = 0;
+    inputAssemblyState.primitiveRestartEnable = false;
+
+
+    // set the rasterization options, like fill mode or front facing 
+    VkPipelineRasterizationStateCreateInfo rasterizationInfo{};
+
+    rasterizationInfo.sType= VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizationInfo.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizationInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizationInfo.flags = 0;
+    rasterizationInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizationInfo.lineWidth = 1.0f;
+    rasterizationInfo.depthClampEnable = VK_FALSE;
+
+    //blend state  
+    VkPipelineColorBlendAttachmentState blendAttachmentstate {};
+    blendAttachmentstate.colorWriteMask = 0xf;
+    blendAttachmentstate.blendEnable = VK_FALSE;
+
+    // create info
+    VkPipelineColorBlendStateCreateInfo colorBlendCreateInfo{};
+    colorBlendCreateInfo.attachmentCount = 1;
+    colorBlendCreateInfo.pAttachments = &blendAttachmentstate;
+    colorBlendCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+
+    VkPipelineDepthStencilStateCreateInfo   depthStencilStateCreate{};
+    depthStencilStateCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencilStateCreate.depthTestEnable = VK_TRUE;
+
+    depthStencilStateCreate.depthWriteEnable = VK_TRUE;
+    depthStencilStateCreate.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depthStencilStateCreate.back.compareOp = VK_COMPARE_OP_ALWAYS;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.scissorCount =1 ;
+    viewportState.viewportCount =1;
+    viewportState.flags =0;
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+
+    // multisample
+    // this might eventually be something to figure out for Sama's work
+
+    VkPipelineMultisampleStateCreateInfo multisampleState{};
+    multisampleState.sType= VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampleState.flags =0;
+    multisampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    //dynamic state 
+    // this specifies what kinds of things can be changed in the state at runtime
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    // this specifies the states we want to be able to change
+    vector<VkDynamicState> enableStates={
+        VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_VIEWPORT
+    };
+    dynamicState.flags = 0;
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.pDynamicStates = enableStates.data();
+    dynamicState.dynamicStateCount =static_cast<uint32_t>(enableStates.size());
+
+    // now we start making the pipeline and we attach the various fixed functions to its create info on the .p attributes
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // then we have to make some shader modules and stuff
 
     cout << "Done" << endl;
 }
