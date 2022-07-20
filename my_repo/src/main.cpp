@@ -6,6 +6,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <vector>
+#include <cstring>
+#include <array>
 using namespace std;
 struct LayerProperties
 {
@@ -215,34 +217,6 @@ int main(int argc, char **argv, char **envp)
         return -1;
     };
 
-    // working on the command buffer stuff
-    VkCommandPoolCreateInfo cpoolInfo{};
-    cpoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    cpoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    cpoolInfo.queueFamilyIndex = graphicsQueueIndex;
-
-    // use the info to create a command pool
-    VkCommandPool cPool;
-    result = vkCreateCommandPool(device, &cpoolInfo, NULL, &cPool);
-    cout << result << endl;
-
-    // make an allocation info
-
-    VkCommandBufferAllocateInfo cAllocInfo{};
-    cAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cAllocInfo.commandPool = cPool;
-    cAllocInfo.commandBufferCount = 1;
-
-    VkCommandBuffer cb;
-    result = vkAllocateCommandBuffers(device, &cAllocInfo, &cb);
-    cout << "command buffer result is " << result << endl;
-
-    // buffers get recorded with commands between "begin" and "end "
-
-    // then they are submittedto queues
-    VkQueue q;
-    vkGetDeviceQueue(device, 0, 0, &q);
-
     // working with device memory and host
 
     VkPhysicalDeviceMemoryProperties deviceMemProps;
@@ -287,7 +261,12 @@ int main(int argc, char **argv, char **envp)
     vkAllocateMemory(device, &mAllocInfo, NULL, &devMem);
 
     // in order for host to use memory it must map and eventually un map
-    // this will get covered later in the book so I'm skipping now
+    uint8_t *pData;
+    vkMapMemory(device, devMem, 0, memReqs.size, 0, (void **)&pData); //? what is this cast at the end?
+
+    memcpy(pData, triangleData.data(), memReqs.size);
+    vkUnmapMemory(device, devMem);
+    vkBindBufferMemory(device, demoBuffer, devMem, 0);
 
     // making images!
     // starts with just a declaration of it and no memory to back it up
@@ -390,62 +369,58 @@ int main(int argc, char **argv, char **envp)
     VkRenderPass rp;
     vkCreateRenderPass(device, &rpInfo, NULL, &rp);
 
-//  framebuffer
+    //  framebuffer
 
     VkFramebufferCreateInfo frameCreateInfo{};
     frameCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     frameCreateInfo.renderPass = rp;
-    frameCreateInfo.attachmentCount =1;
-    frameCreateInfo.pAttachments = &imView; 
+    frameCreateInfo.attachmentCount = 1;
+    frameCreateInfo.pAttachments = &imView;
     frameCreateInfo.width = imgCreateInfo.extent.width;
     frameCreateInfo.height = imgCreateInfo.extent.height;
     frameCreateInfo.layers = 1;
 
     VkFramebuffer fb;
 
-    vkCreateFramebuffer(device,&frameCreateInfo,NULL,&fb);
-
-
+    vkCreateFramebuffer(device, &frameCreateInfo, NULL, &fb);
 
     // now we are on to pipeline stuff I think
 
     VkDescriptorSetLayoutBinding setLayoutBinding{};
     // ?? what were descriptors about again because they are different than descriptions..?
-    // these are things like collections of descriptors passed to the shader code. so how we make uniforms 
+    // these are things like collections of descriptors passed to the shader code. so how we make uniforms
     // descriptor set layouts are collections of these descriptor sets
     VkDescriptorSetLayout dsl;
     VkDescriptorSetLayoutCreateInfo setLayoutCreateInfo{};
-    
+
     setLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     setLayoutCreateInfo.pNext = NULL;
     setLayoutCreateInfo.pBindings = &setLayoutBinding;
     setLayoutCreateInfo.bindingCount = 1;
 
-    vkCreateDescriptorSetLayout(device,&setLayoutCreateInfo,NULL,&dsl);
-
+    vkCreateDescriptorSetLayout(device, &setLayoutCreateInfo, NULL, &dsl);
 
     // in order to  access the descriptor set layoout we need a pipeline layout
 
-   VkPipelineLayoutCreateInfo pipelineLayoutCreate{}; 
-   pipelineLayoutCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-   // ?? why arent' we setting layouts on the pipeline here?
-   // is it because we are using push constant instead of actual shader resources like uniforms?
-    pipelineLayoutCreate.pSetLayouts =NULL;
+    VkPipelineLayoutCreateInfo pipelineLayoutCreate{};
+    pipelineLayoutCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    // ?? why arent' we setting layouts on the pipeline here?
+    // is it because we are using push constant instead of actual shader resources like uniforms?
+    pipelineLayoutCreate.pSetLayouts = NULL;
     pipelineLayoutCreate.setLayoutCount = 0;
 
     // here's the first push constant we've used
-    VkPushConstantRange pushConstantRange {};
+    VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushConstantRange.size = sizeof(glm::mat4);
     pushConstantRange.offset = 0;
-
 
     // set the push range on the pipeline layout
 
     pipelineLayoutCreate.pushConstantRangeCount = 1;
     pipelineLayoutCreate.pPushConstantRanges = &pushConstantRange;
     VkPipelineLayout pipelineLayout;
-    vkCreatePipelineLayout(device,&pipelineLayoutCreate,NULL,&pipelineLayout);
+    vkCreatePipelineLayout(device, &pipelineLayoutCreate, NULL, &pipelineLayout);
 
     // create a cache for reasons
 
@@ -454,43 +429,42 @@ int main(int argc, char **argv, char **envp)
     plineCacheCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
 
     VkPipelineCache plineCache;
-    vkCreatePipelineCache(device,&plineCacheCreate,NULL,&plineCache);
+    vkCreatePipelineCache(device, &plineCacheCreate, NULL, &plineCache);
 
     // make the actual pipeline now
     // set up the fixed functions used in the pipeline
     // these allow us to control the hardware settings of the physical device
     // defines the primitive topology
-    VkPipelineInputAssemblyStateCreateInfo inputAssemblyState {};
-    inputAssemblyState.sType  = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyState{};
+    inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
 
     inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     inputAssemblyState.flags = 0;
     inputAssemblyState.primitiveRestartEnable = false;
 
+    // set the rasterization options, like fill mode or front facing
+    VkPipelineRasterizationStateCreateInfo rasterizationState{};
 
-    // set the rasterization options, like fill mode or front facing 
-    VkPipelineRasterizationStateCreateInfo rasterizationInfo{};
+    rasterizationState.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizationState.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizationState.flags = 0;
+    rasterizationState.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizationState.lineWidth = 1.0f;
+    rasterizationState.depthClampEnable = VK_FALSE;
 
-    rasterizationInfo.sType= VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizationInfo.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizationInfo.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizationInfo.flags = 0;
-    rasterizationInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
-    rasterizationInfo.lineWidth = 1.0f;
-    rasterizationInfo.depthClampEnable = VK_FALSE;
-
-    //blend state  
-    VkPipelineColorBlendAttachmentState blendAttachmentstate {};
+    // blend state
+    VkPipelineColorBlendAttachmentState blendAttachmentstate{};
     blendAttachmentstate.colorWriteMask = 0xf;
     blendAttachmentstate.blendEnable = VK_FALSE;
 
     // create info
-    VkPipelineColorBlendStateCreateInfo colorBlendCreateInfo{};
-    colorBlendCreateInfo.attachmentCount = 1;
-    colorBlendCreateInfo.pAttachments = &blendAttachmentstate;
-    colorBlendCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    VkPipelineColorBlendStateCreateInfo colorBlendState{};
+    colorBlendState.attachmentCount = 1;
+    colorBlendState.pAttachments = &blendAttachmentstate;
+    colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 
-    VkPipelineDepthStencilStateCreateInfo   depthStencilStateCreate{};
+    VkPipelineDepthStencilStateCreateInfo depthStencilStateCreate{};
     depthStencilStateCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencilStateCreate.depthTestEnable = VK_TRUE;
 
@@ -499,52 +473,123 @@ int main(int argc, char **argv, char **envp)
     depthStencilStateCreate.back.compareOp = VK_COMPARE_OP_ALWAYS;
 
     VkPipelineViewportStateCreateInfo viewportState{};
-    viewportState.scissorCount =1 ;
-    viewportState.viewportCount =1;
-    viewportState.flags =0;
+    viewportState.scissorCount = 1;
+    viewportState.viewportCount = 1;
+    viewportState.flags = 0;
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
 
     // multisample
     // this might eventually be something to figure out for Sama's work
 
     VkPipelineMultisampleStateCreateInfo multisampleState{};
-    multisampleState.sType= VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampleState.flags =0;
+    multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampleState.flags = 0;
     multisampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    //dynamic state 
-    // this specifies what kinds of things can be changed in the state at runtime
+    // dynamic state
+    //  this specifies what kinds of things can be changed in the state at runtime
     VkPipelineDynamicStateCreateInfo dynamicState{};
     // this specifies the states we want to be able to change
-    vector<VkDynamicState> enableStates={
+    vector<VkDynamicState> enableStates = {
         VK_DYNAMIC_STATE_SCISSOR,
-        VK_DYNAMIC_STATE_VIEWPORT
-    };
+        VK_DYNAMIC_STATE_VIEWPORT};
     dynamicState.flags = 0;
     dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
     dynamicState.pDynamicStates = enableStates.data();
-    dynamicState.dynamicStateCount =static_cast<uint32_t>(enableStates.size());
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(enableStates.size());
 
     // now we start making the pipeline and we attach the various fixed functions to its create info on the .p attributes
 
+    VkGraphicsPipelineCreateInfo pipelinecreateInfo{};
+    pipelinecreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+
+    pipelinecreateInfo.layout = pipelineLayout;
+    pipelinecreateInfo.renderPass = rp;
+    pipelinecreateInfo.flags = 0;
+    pipelinecreateInfo.basePipelineIndex = -1;
+    pipelinecreateInfo.basePipelineHandle = VK_NULL_HANDLE;
+
+    // connecting fixed function information and
+    pipelinecreateInfo.pInputAssemblyState = &inputAssemblyState;
+    pipelinecreateInfo.pMultisampleState = &multisampleState;
+    pipelinecreateInfo.pViewportState = &viewportState;
+    pipelinecreateInfo.pDynamicState = &dynamicState;
+    pipelinecreateInfo.pColorBlendState = &colorBlendState;
+    pipelinecreateInfo.pRasterizationState = &rasterizationState;
+    pipelinecreateInfo.pDepthStencilState = &depthStencilStateCreate; // I think this might cause issues since we don't have a depth attachment?
+
+    array<VkPipelineShaderStageCreateInfo, 2> shaderStages{};
+    // shader stages
+    pipelinecreateInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
+    pipelinecreateInfo.pStages = shaderStages.data();
+
+    // set up the vertex attributes
+    // only need one binding, but will have 2 attribs
+    VkVertexInputBindingDescription vertexInputBindings = {};
+    vertexInputBindings.binding =0;
+    vertexInputBindings.stride = sizeof(ColorVert);
+    vertexInputBindings.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription vertexInputAttribs[2];
+
+    vertexInputAttribs[0].binding =0;
+    vertexInputAttribs[0].location = 0;
+    vertexInputAttribs[0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    vertexInputAttribs[0].offset =0;
+    vertexInputAttribs[1].binding =0;
+    vertexInputAttribs[1].location = 1;
+    vertexInputAttribs[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    vertexInputAttribs[1].offset =16;
+
+    // connect it up with a vertexinputstatecreateinfo
+    VkPipelineVertexInputStateCreateInfo vertInputState{};
+    vertInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertInputState.vertexBindingDescriptionCount = 1;
+    vertInputState.pVertexBindingDescriptions = &vertexInputBindings;
+    vertInputState.vertexAttributeDescriptionCount = 2;
+    vertInputState.pVertexAttributeDescriptions =vertexInputAttribs;
+
+    pipelinecreateInfo.pVertexInputState = &vertInputState;
 
 
 
-
-
-
-
-
-
-
-
-
-
-
+    //
 
 
 
     // then we have to make some shader modules and stuff
+    // ??? how do we write scons step to compile the shaders with glsllangvalidator first?
+
+    VkPipeline graphicsPipeline;
+
+
+    // working on the command buffer stuff
+    VkCommandPoolCreateInfo cpoolInfo{};
+    cpoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    cpoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    cpoolInfo.queueFamilyIndex = graphicsQueueIndex;
+
+    // use the info to create a command pool
+    VkCommandPool cPool;
+    result = vkCreateCommandPool(device, &cpoolInfo, NULL, &cPool);
+    cout << result << endl;
+
+    // make an allocation info
+
+    VkCommandBufferAllocateInfo cAllocInfo{};
+    cAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cAllocInfo.commandPool = cPool;
+    cAllocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cb;
+    result = vkAllocateCommandBuffers(device, &cAllocInfo, &cb);
+    cout << "command buffer result is " << result << endl;
+
+    // buffers get recorded with commands between "begin" and "end "
+
+    // then they are submittedto queues
+    VkQueue q;
+    vkGetDeviceQueue(device, 0, 0, &q);
 
     cout << "Done" << endl;
 }
