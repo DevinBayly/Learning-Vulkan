@@ -8,6 +8,7 @@
 #include <vector>
 #include <cstring>
 #include <array>
+#include <fstream>
 using namespace std;
 struct LayerProperties
 {
@@ -551,16 +552,63 @@ int main(int argc, char **argv, char **envp)
 
     pipelinecreateInfo.pVertexInputState = &vertInputState;
 
-
-
-    //
-
-
-
     // then we have to make some shader modules and stuff
+
+    // load the spv files and then convert them to byte code
+    vector<char> vcode;
+    vector<char> fcode;
+    {
+    ifstream file("./vert.spv",ios::ate | ios::binary);
+    if (!file.is_open()) {
+        throw runtime_error("couldn't load vert");
+    }
+    size_t fileSize = file.tellg();
+    vector<char> buf(fileSize);
+    file.seekg(0);
+    file.read(buf.data(),fileSize);
+    vcode = buf;
+    }
+    {
+    ifstream file("./frag.spv",ios::ate | ios::binary);
+    if (!file.is_open()) {
+        throw runtime_error("couldn't load frag");
+    }
+    size_t fileSize = file.tellg();
+    vector<char> buf(fileSize);
+    file.seekg(0);
+    file.read(buf.data(),fileSize);
+    fcode = buf;
+    }
+    // make modules
+    VkShaderModuleCreateInfo vcreateInfo{};
+    vcreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    vcreateInfo.codeSize = vcode.size();
+    vcreateInfo.pCode = reinterpret_cast<const uint32_t*>(vcode.data());
+
+    VkShaderModule vshaderModule;
+    vkCreateShaderModule(device,&vcreateInfo,NULL,&vshaderModule);
+
+    VkShaderModuleCreateInfo fcreateInfo{};
+    fcreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    fcreateInfo.codeSize = fcode.size();
+    fcreateInfo.pCode = reinterpret_cast<const uint32_t*>(fcode.data());
+
+    VkShaderModule fshaderModule;
+    vkCreateShaderModule(device,&fcreateInfo,NULL,&fshaderModule);
+    // connect to the shaderStages
+    shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    shaderStages[0].pName = "main";
+    shaderStages[0].module = vshaderModule;
+    shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    shaderStages[1].pName = "main";
+    shaderStages[1].module = fshaderModule;
+
     // ??? how do we write scons step to compile the shaders with glsllangvalidator first?
 
     VkPipeline graphicsPipeline;
+    vkCreateGraphicsPipelines(device,plineCache,1,&pipelinecreateInfo,NULL,&graphicsPipeline);
 
 
     // working on the command buffer stuff
