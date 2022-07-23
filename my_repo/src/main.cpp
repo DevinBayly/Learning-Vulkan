@@ -652,8 +652,7 @@ int main(int argc, char **argv, char **envp)
     renderPassBeginInfo.renderPass = rp;
     renderPassBeginInfo.framebuffer = fb;
 
-
-    vkCmdBeginRenderPass(cb,&renderPassBeginInfo,VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(cb, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     // now set the dynamic state things
     // viewport
@@ -661,41 +660,40 @@ int main(int argc, char **argv, char **envp)
     viewport.width = imgCreateInfo.extent.width;
     viewport.height = imgCreateInfo.extent.height;
     viewport.minDepth = 0.0f;
-    viewport.maxDepth =1.0f;
+    viewport.maxDepth = 1.0f;
 
-    vkCmdSetViewport(cb,0,1,&viewport);
+    vkCmdSetViewport(cb, 0, 1, &viewport);
 
-    // 
+    //
     // scissor
     VkRect2D scissor{};
     scissor.extent.width = viewport.width;
     scissor.extent.height = viewport.height;
-    vkCmdSetScissor(cb,0,1,&scissor);
+    vkCmdSetScissor(cb, 0, 1, &scissor);
 
-    vkCmdBindPipeline(cb,VK_PIPELINE_BIND_POINT_GRAPHICS,graphicsPipeline);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-
-    // now perform the actual render 
+    // now perform the actual render
     // bind the vert buffers
-    VkDeviceSize offsets[1] ={0};
-    vkCmdBindVertexBuffers(cb,0,1,&demoBuffer,offsets);
+    VkDeviceSize offsets[1] = {0};
+    vkCmdBindVertexBuffers(cb, 0, 1, &demoBuffer, offsets);
 
     // create the push constant for our camera
 
     vector<glm::vec3> pos = {
-        glm::vec3(-1.5f,0.0f,-4.0f),
-        glm::vec3(0.0f,0.0f,-2.5f),
-        glm::vec3(1.5f,0.0f,-4.0f)
-    };// not sure how this will affect our view of the scene
+        glm::vec3(-1.5f, 0.0f, -4.0f),
+        glm::vec3(0.0f, 0.0f, -2.5f),
+        glm::vec3(1.5f, 0.0f, -4.0f)}; // not sure how this will affect our view of the scene
 
     // what happens when you use a push constant this way?
-    for (auto v : pos) {
+    for (auto v : pos)
+    {
         // this draws scene from 3 dif perspectives
         // test without the alternate views perhaps
-        glm::mat4 mvpMat = glm::perspective(glm::radians(60.0f),viewport.width/viewport.height,0.1f,256.0f)*glm::translate(glm::mat4(1.0f),v);
-        vkCmdPushConstants(cb,pipelineLayout,VK_SHADER_STAGE_VERTEX_BIT,0,sizeof(mvpMat),&mvpMat);
+        glm::mat4 mvpMat = glm::perspective(glm::radians(60.0f), viewport.width / viewport.height, 0.1f, 256.0f) * glm::translate(glm::mat4(1.0f), v);
+        vkCmdPushConstants(cb, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mvpMat), &mvpMat);
         // put in a drawing command here, where we don't do indexed drawing
-        vkCmdDraw(cb,3,1,0,0);
+        vkCmdDraw(cb, 3, 1, 0, 0);
     }
 
     vkCmdEndRenderPass(cb);
@@ -721,11 +719,161 @@ int main(int argc, char **argv, char **envp)
     fenceInfo.flags = 0;
     VkFence fence;
 
-    vkCreateFence(device,&fenceInfo,NULL,&fence);
-    vkQueueSubmit(q,1,&submitInfo,fence);
+    vkCreateFence(device, &fenceInfo, NULL, &fence);
+    vkQueueSubmit(q, 1, &submitInfo, fence);
     // this make sure that the gpu doesnt handle more work before the host has had a chance to do more.
-    vkWaitForFences(device,1,&fence,VK_TRUE,UINT64_MAX); // I guess this means wait for the max time out time for the device to finish it's work before getting back to the next lines in the host
+    vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX); // I guess this means wait for the max time out time for the device to finish it's work before getting back to the next lines in the host
 
+    vkDeviceWaitIdle(device);
+
+    // make a new image that we can copy to from the frame buffer
+    // steps
+    // createImageInfo
+    // or usethe existing info
+    // just change the usage
+    imgCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+    // specify usage is dest for transfer
+    // make image
+    VkImage copyImg;
+    vkCreateImage(device, &imgCreateInfo, NULL, &copyImg);
+    // get mem reqs
+    VkMemoryRequirements copyImgMemReq;
+    vkGetImageMemoryRequirements(device, copyImg, &copyImgMemReq);
+
+    // allocate mem
+
+    VkMemoryAllocateInfo copyImAllocInfo{};
+    copyImAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+    copyImAllocInfo.allocationSize = copyImgMemReq.size;
+    copyImAllocInfo.memoryTypeIndex = 0;
+
+    VkDeviceMemory copyImgMem;
+    vkAllocateMemory(device, &copyImAllocInfo, NULL, &copyImgMem);
+    // bind mem to img
+    vkBindImageMemory(device, copyImg, copyImgMem, 0);
+
+    // make a new cmd buffer
+    VkCommandBufferAllocateInfo cbCopyInfo{};
+    cbCopyInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+
+    cbCopyInfo.commandPool = cPool;
+    cbCopyInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cbCopyInfo.commandBufferCount = 1;
+    VkCommandBuffer cbCopy;
+    vkAllocateCommandBuffers(device, &cbCopyInfo, &cbCopy);
+
+    // make a begin cmd
+    VkCommandBufferBeginInfo cpyBegin{};
+    cpyBegin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+    vkBeginCommandBuffer(cbCopy, &cpyBegin);
+
+    // transition the layout from undefined to transfer dest layout
+
+    VkImageMemoryBarrier imbarrier{};
+
+    imbarrier.srcAccessMask = 0;
+    imbarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    imbarrier.image = copyImg;
+    imbarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imbarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imbarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imbarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    imbarrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+    vkCmdPipelineBarrier(cbCopy, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                         0, NULL,
+                         0, NULL,
+                         1, &imbarrier);
+
+    // colorAttachment.image is already in VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, and does not need to be transitioned
+
+    VkImageCopy imageCopyRegion{};
+    imageCopyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    imageCopyRegion.srcSubresource.layerCount = 1;
+    imageCopyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    imageCopyRegion.dstSubresource.layerCount = 1;
+    imageCopyRegion.extent = imgCreateInfo.extent;
+
+    vkCmdCopyImage(
+        cbCopy,
+        myImg, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        copyImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        1,
+        &imageCopyRegion);
+
+    // Transition destination image to general layout, which is the required layout for mapping the image memory later on
+
+    imbarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    imbarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    imbarrier.image = copyImg;
+    imbarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imbarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    imbarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    imbarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    imbarrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+    vkCmdPipelineBarrier(cbCopy, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                         0, NULL,
+                         0, NULL,
+                         1, &imbarrier);
+    vkEndCommandBuffer(cbCopy);
+
+    // nesting in braces so copy paste doesn't fail redeclarations
+    {
+    VkSubmitInfo submitInfo{};
+
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cb;
+    // creating a fence, not sure what it does yet
+
+    VkFenceCreateInfo fenceInfo{};
+
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = 0;
+    VkFence fence;
+
+    vkCreateFence(device, &fenceInfo, NULL, &fence);
+    vkQueueSubmit(q, 1, &submitInfo, fence);
+    // this make sure that the gpu doesnt handle more work before the host has had a chance to do more.
+    vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX); // I guess this means wait for the max time out time for the device to finish it's work before getting back to the next lines in the host
+
+    }
+    // Get layout of the image (including row pitch)
+    VkImageSubresource subResource{};
+    subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    VkSubresourceLayout subResourceLayout;
+
+    vkGetImageSubresourceLayout(device, copyImg, &subResource, &subResourceLayout);
+
+    const char* imagedata;
+    // Map image memory so we can start copying from it
+    vkMapMemory(device, copyImgMem, 0, VK_WHOLE_SIZE, 0, (void **)&imagedata);
+    imagedata += subResourceLayout.offset;
+
+    // now write out image
+    ofstream outfile("test.bin",ios::binary);
+    outfile.write(imagedata,imgCreateInfo.extent.width*imgCreateInfo.extent.height*4);
+    outfile.close();
+    // this involves creating a imagememory barrier in a pipeline barrier
+
+    // then we make an img copy and record it as a command buffer
+
+    // then we have to transition the image so that it is in general use layout for saving to host disk
+    // recall taht these transitions are cmds that we record
+    // after recording these things we should submit to the queue the same as above
+
+    // then we need to find the offset into the data for the aspect color which is what we care about
+    // this is done with vkget image subresource layout and that has the offset value
+
+    // then we map the image's memory and perform a copy to a char * pointer which we can iterate over to manipulate the
+    // actual bytes of data
+
+    // then try to write it out as an image
 
     cout << "Done" << endl;
 }
