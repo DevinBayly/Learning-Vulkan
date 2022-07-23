@@ -143,7 +143,7 @@ int main(int argc, char **argv, char **envp)
         cout << "device's name is " << props.deviceName << endl;
         string name = string(props.deviceName);
         // this passes when the text llvm isn't in the name
-        if (name.find("llvm") == string::npos)
+        if (name.find("llvm") != string::npos)
         {
             selectedGpu = gpuDev;
         };
@@ -280,12 +280,12 @@ int main(int argc, char **argv, char **envp)
     imgCreateInfo.extent.height = 256;
     imgCreateInfo.extent.width = 256;
     imgCreateInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    imgCreateInfo.format = VK_FORMAT_R8G8B8A8_SRGB; // this means the numbers will be 0-256 not 0-1 UNORM
+    imgCreateInfo.format = VK_FORMAT_R8G8B8A8_UNORM; // this means the numbers will be 0-256 not 0-1 UNORM
     imgCreateInfo.mipLevels = 1;
     imgCreateInfo.queueFamilyIndexCount = 0;
     imgCreateInfo.arrayLayers = 1;
     imgCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imgCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imgCreateInfo.tiling = VK_IMAGE_TILING_LINEAR;
     imgCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imgCreateInfo.pNext = NULL;
     // usage determines whether it is a transfer dest/src or color attachment drawn on by a render pass
@@ -545,10 +545,10 @@ int main(int argc, char **argv, char **envp)
     // connect it up with a vertexinputstatecreateinfo
     VkPipelineVertexInputStateCreateInfo vertInputState{};
     vertInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertInputState.vertexBindingDescriptionCount = 1;
-    vertInputState.pVertexBindingDescriptions = &vertexInputBindings;
-    vertInputState.vertexAttributeDescriptionCount = 2;
-    vertInputState.pVertexAttributeDescriptions = vertexInputAttribs;
+    vertInputState.vertexBindingDescriptionCount = 0;
+    vertInputState.pVertexBindingDescriptions = NULL;
+    vertInputState.vertexAttributeDescriptionCount = 0;
+    vertInputState.pVertexAttributeDescriptions = NULL;
 
     pipelinecreateInfo.pVertexInputState = &vertInputState;
 
@@ -676,26 +676,11 @@ int main(int argc, char **argv, char **envp)
     // now perform the actual render
     // bind the vert buffers
     VkDeviceSize offsets[1] = {0};
-    vkCmdBindVertexBuffers(cb, 0, 1, &demoBuffer, offsets);
+    // vkCmdBindVertexBuffers(cb, 0, 1, &demoBuffer, offsets);
 
     // create the push constant for our camera
 
-    vector<glm::vec3> pos = {
-        glm::vec3(-1.5f, 0.0f, -4.0f),
-        glm::vec3(0.0f, 0.0f, -2.5f),
-        glm::vec3(1.5f, 0.0f, -4.0f)}; // not sure how this will affect our view of the scene
-
-    // what happens when you use a push constant this way?
-    for (auto v : pos)
-    {
-        // this draws scene from 3 dif perspectives
-        // test without the alternate views perhaps
-        glm::mat4 mvpMat = glm::perspective(glm::radians(60.0f), viewport.width / viewport.height, 0.1f, 256.0f) * glm::translate(glm::mat4(1.0f), v);
-        vkCmdPushConstants(cb, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mvpMat), &mvpMat);
-        // put in a drawing command here, where we don't do indexed drawing
-        vkCmdDraw(cb, 3, 1, 0, 0);
-    }
-
+    vkCmdDraw(cb, 3, 1, 0, 0);
     vkCmdEndRenderPass(cb);
 
     vkEndCommandBuffer(cb);
@@ -744,7 +729,7 @@ int main(int argc, char **argv, char **envp)
     // allocate mem
 
     VkMemoryAllocateInfo copyImAllocInfo{};
-    copyImAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+    copyImAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     copyImAllocInfo.allocationSize = copyImgMemReq.size;
     copyImAllocInfo.memoryTypeIndex = 0;
 
@@ -772,7 +757,7 @@ int main(int argc, char **argv, char **envp)
     // transition the layout from undefined to transfer dest layout
 
     VkImageMemoryBarrier imbarrier{};
-
+    imbarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     imbarrier.srcAccessMask = 0;
     imbarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     imbarrier.image = copyImg;
@@ -824,24 +809,23 @@ int main(int argc, char **argv, char **envp)
 
     // nesting in braces so copy paste doesn't fail redeclarations
     {
-    VkSubmitInfo submitInfo{};
+        VkSubmitInfo submitInfo{};
 
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cb;
-    // creating a fence, not sure what it does yet
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &cb;
+        // creating a fence, not sure what it does yet
 
-    VkFenceCreateInfo fenceInfo{};
+        VkFenceCreateInfo fenceInfo{};
 
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = 0;
-    VkFence fence;
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fenceInfo.flags = 0;
+        VkFence fence;
 
-    vkCreateFence(device, &fenceInfo, NULL, &fence);
-    vkQueueSubmit(q, 1, &submitInfo, fence);
-    // this make sure that the gpu doesnt handle more work before the host has had a chance to do more.
-    vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX); // I guess this means wait for the max time out time for the device to finish it's work before getting back to the next lines in the host
-
+        vkCreateFence(device, &fenceInfo, NULL, &fence);
+        vkQueueSubmit(q, 1, &submitInfo, fence);
+        // this make sure that the gpu doesnt handle more work before the host has had a chance to do more.
+        vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX); // I guess this means wait for the max time out time for the device to finish it's work before getting back to the next lines in the host
     }
     // Get layout of the image (including row pitch)
     VkImageSubresource subResource{};
@@ -850,14 +834,26 @@ int main(int argc, char **argv, char **envp)
 
     vkGetImageSubresourceLayout(device, copyImg, &subResource, &subResourceLayout);
 
-    const char* imagedata;
+    const char *imagedata;
     // Map image memory so we can start copying from it
     vkMapMemory(device, copyImgMem, 0, VK_WHOLE_SIZE, 0, (void **)&imagedata);
     imagedata += subResourceLayout.offset;
 
     // now write out image
-    ofstream outfile("test.bin",ios::binary);
-    outfile.write(imagedata,imgCreateInfo.extent.width*imgCreateInfo.extent.height*4);
+    // for (int32_t y =0;y<imgCreateInfo.extent.height;y++){
+    //     for (int32_t x = 0 ; x < imgCreateInfo.extent.width;x++) {
+    //         uint32_t * row = (uint32_t*) imagedata;
+    //         if (*row > 0 ) {
+    //             cout << " got greater than 0 at " << x << y << endl;
+    //         } else {
+    //             // cout << "nope " << x << y << endl;
+    //         }
+    //         row++;
+    //     }
+    //     imagedata+=subResourceLayout.rowPitch;
+    // }
+    ofstream outfile("test.data", ios::binary);
+    outfile.write(imagedata, imgCreateInfo.extent.width * imgCreateInfo.extent.height * 4);
     outfile.close();
     // this involves creating a imagememory barrier in a pipeline barrier
 
