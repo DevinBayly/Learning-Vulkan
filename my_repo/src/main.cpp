@@ -527,20 +527,20 @@ int main(int argc, char **argv, char **envp)
     // set up the vertex attributes
     // only need one binding, but will have 2 attribs
     VkVertexInputBindingDescription vertexInputBindings = {};
-    vertexInputBindings.binding =0;
+    vertexInputBindings.binding = 0;
     vertexInputBindings.stride = sizeof(ColorVert);
     vertexInputBindings.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkVertexInputAttributeDescription vertexInputAttribs[2];
 
-    vertexInputAttribs[0].binding =0;
+    vertexInputAttribs[0].binding = 0;
     vertexInputAttribs[0].location = 0;
     vertexInputAttribs[0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    vertexInputAttribs[0].offset =0;
-    vertexInputAttribs[1].binding =0;
+    vertexInputAttribs[0].offset = 0;
+    vertexInputAttribs[1].binding = 0;
     vertexInputAttribs[1].location = 1;
     vertexInputAttribs[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    vertexInputAttribs[1].offset =16;
+    vertexInputAttribs[1].offset = 16;
 
     // connect it up with a vertexinputstatecreateinfo
     VkPipelineVertexInputStateCreateInfo vertInputState{};
@@ -548,7 +548,7 @@ int main(int argc, char **argv, char **envp)
     vertInputState.vertexBindingDescriptionCount = 1;
     vertInputState.pVertexBindingDescriptions = &vertexInputBindings;
     vertInputState.vertexAttributeDescriptionCount = 2;
-    vertInputState.pVertexAttributeDescriptions =vertexInputAttribs;
+    vertInputState.pVertexAttributeDescriptions = vertexInputAttribs;
 
     pipelinecreateInfo.pVertexInputState = &vertInputState;
 
@@ -558,43 +558,45 @@ int main(int argc, char **argv, char **envp)
     vector<char> vcode;
     vector<char> fcode;
     {
-    ifstream file("./vert.spv",ios::ate | ios::binary);
-    if (!file.is_open()) {
-        throw runtime_error("couldn't load vert");
-    }
-    size_t fileSize = file.tellg();
-    vector<char> buf(fileSize);
-    file.seekg(0);
-    file.read(buf.data(),fileSize);
-    vcode = buf;
+        ifstream file("./vert.spv", ios::ate | ios::binary);
+        if (!file.is_open())
+        {
+            throw runtime_error("couldn't load vert");
+        }
+        size_t fileSize = file.tellg();
+        vector<char> buf(fileSize);
+        file.seekg(0);
+        file.read(buf.data(), fileSize);
+        vcode = buf;
     }
     {
-    ifstream file("./frag.spv",ios::ate | ios::binary);
-    if (!file.is_open()) {
-        throw runtime_error("couldn't load frag");
-    }
-    size_t fileSize = file.tellg();
-    vector<char> buf(fileSize);
-    file.seekg(0);
-    file.read(buf.data(),fileSize);
-    fcode = buf;
+        ifstream file("./frag.spv", ios::ate | ios::binary);
+        if (!file.is_open())
+        {
+            throw runtime_error("couldn't load frag");
+        }
+        size_t fileSize = file.tellg();
+        vector<char> buf(fileSize);
+        file.seekg(0);
+        file.read(buf.data(), fileSize);
+        fcode = buf;
     }
     // make modules
     VkShaderModuleCreateInfo vcreateInfo{};
     vcreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     vcreateInfo.codeSize = vcode.size();
-    vcreateInfo.pCode = reinterpret_cast<const uint32_t*>(vcode.data());
+    vcreateInfo.pCode = reinterpret_cast<const uint32_t *>(vcode.data());
 
     VkShaderModule vshaderModule;
-    vkCreateShaderModule(device,&vcreateInfo,NULL,&vshaderModule);
+    vkCreateShaderModule(device, &vcreateInfo, NULL, &vshaderModule);
 
     VkShaderModuleCreateInfo fcreateInfo{};
     fcreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     fcreateInfo.codeSize = fcode.size();
-    fcreateInfo.pCode = reinterpret_cast<const uint32_t*>(fcode.data());
+    fcreateInfo.pCode = reinterpret_cast<const uint32_t *>(fcode.data());
 
     VkShaderModule fshaderModule;
-    vkCreateShaderModule(device,&fcreateInfo,NULL,&fshaderModule);
+    vkCreateShaderModule(device, &fcreateInfo, NULL, &fshaderModule);
     // connect to the shaderStages
     shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -608,8 +610,7 @@ int main(int argc, char **argv, char **envp)
     // ??? how do we write scons step to compile the shaders with glsllangvalidator first?
 
     VkPipeline graphicsPipeline;
-    vkCreateGraphicsPipelines(device,plineCache,1,&pipelinecreateInfo,NULL,&graphicsPipeline);
-
+    vkCreateGraphicsPipelines(device, plineCache, 1, &pipelinecreateInfo, NULL, &graphicsPipeline);
 
     // working on the command buffer stuff
     VkCommandPoolCreateInfo cpoolInfo{};
@@ -617,7 +618,6 @@ int main(int argc, char **argv, char **envp)
     cpoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     cpoolInfo.queueFamilyIndex = graphicsQueueIndex;
 
-    // use the info to create a command pool
     VkCommandPool cPool;
     result = vkCreateCommandPool(device, &cpoolInfo, NULL, &cPool);
     cout << result << endl;
@@ -634,10 +634,98 @@ int main(int argc, char **argv, char **envp)
     cout << "command buffer result is " << result << endl;
 
     // buffers get recorded with commands between "begin" and "end "
+    VkCommandBufferBeginInfo cmdBeginInfo{};
+
+    cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+    vkBeginCommandBuffer(cb, &cmdBeginInfo);
+
+    VkClearValue clearValue;
+    clearValue.color = {{0.0f, 0.0f, 0.2f, 1.0f}};
+
+    VkRenderPassBeginInfo renderPassBeginInfo = {};
+    renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassBeginInfo.renderArea.extent.width = imgCreateInfo.extent.width;
+    renderPassBeginInfo.renderArea.extent.height = imgCreateInfo.extent.height;
+    renderPassBeginInfo.clearValueCount = 1;
+    renderPassBeginInfo.pClearValues = &clearValue;
+    renderPassBeginInfo.renderPass = rp;
+    renderPassBeginInfo.framebuffer = fb;
+
+
+    vkCmdBeginRenderPass(cb,&renderPassBeginInfo,VK_SUBPASS_CONTENTS_INLINE);
+
+    // now set the dynamic state things
+    // viewport
+    VkViewport viewport{};
+    viewport.width = imgCreateInfo.extent.width;
+    viewport.height = imgCreateInfo.extent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth =1.0f;
+
+    vkCmdSetViewport(cb,0,1,&viewport);
+
+    // 
+    // scissor
+    VkRect2D scissor{};
+    scissor.extent.width = viewport.width;
+    scissor.extent.height = viewport.height;
+    vkCmdSetScissor(cb,0,1,&scissor);
+
+    vkCmdBindPipeline(cb,VK_PIPELINE_BIND_POINT_GRAPHICS,graphicsPipeline);
+
+
+    // now perform the actual render 
+    // bind the vert buffers
+    VkDeviceSize offsets[1] ={0};
+    vkCmdBindVertexBuffers(cb,0,1,&demoBuffer,offsets);
+
+    // create the push constant for our camera
+
+    vector<glm::vec3> pos = {
+        glm::vec3(-1.5f,0.0f,-4.0f),
+        glm::vec3(0.0f,0.0f,-2.5f),
+        glm::vec3(1.5f,0.0f,-4.0f)
+    };// not sure how this will affect our view of the scene
+
+    // what happens when you use a push constant this way?
+    for (auto v : pos) {
+        // this draws scene from 3 dif perspectives
+        // test without the alternate views perhaps
+        glm::mat4 mvpMat = glm::perspective(glm::radians(60.0f),viewport.width/viewport.height,0.1f,256.0f)*glm::translate(glm::mat4(1.0f),v);
+        vkCmdPushConstants(cb,pipelineLayout,VK_SHADER_STAGE_VERTEX_BIT,0,sizeof(mvpMat),&mvpMat);
+        // put in a drawing command here, where we don't do indexed drawing
+        vkCmdDraw(cb,3,1,0,0);
+    }
+
+    vkCmdEndRenderPass(cb);
+
+    vkEndCommandBuffer(cb);
+
+    // submit to queue
 
     // then they are submittedto queues
     VkQueue q;
     vkGetDeviceQueue(device, 0, 0, &q);
+
+    VkSubmitInfo submitInfo{};
+
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cb;
+    // creating a fence, not sure what it does yet
+
+    VkFenceCreateInfo fenceInfo{};
+
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = 0;
+    VkFence fence;
+
+    vkCreateFence(device,&fenceInfo,NULL,&fence);
+    vkQueueSubmit(q,1,&submitInfo,fence);
+    // this make sure that the gpu doesnt handle more work before the host has had a chance to do more.
+    vkWaitForFences(device,1,&fence,VK_TRUE,UINT64_MAX); // I guess this means wait for the max time out time for the device to finish it's work before getting back to the next lines in the host
+
 
     cout << "Done" << endl;
 }
