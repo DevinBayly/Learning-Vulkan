@@ -143,7 +143,7 @@ int main(int argc, char **argv, char **envp)
         cout << "device's name is " << props.deviceName << endl;
         string name = string(props.deviceName);
         // this passes when the text llvm isn't in the name
-        if (name.find("llvm") != string::npos)
+        if (name.find("llvm") == string::npos)
         {
             selectedGpu = gpuDev;
         };
@@ -465,14 +465,6 @@ int main(int argc, char **argv, char **envp)
     colorBlendState.pAttachments = &blendAttachmentstate;
     colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 
-    VkPipelineDepthStencilStateCreateInfo depthStencilStateCreate{};
-    depthStencilStateCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencilStateCreate.depthTestEnable = VK_TRUE;
-
-    depthStencilStateCreate.depthWriteEnable = VK_TRUE;
-    depthStencilStateCreate.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-    depthStencilStateCreate.back.compareOp = VK_COMPARE_OP_ALWAYS;
-
     VkPipelineViewportStateCreateInfo viewportState{};
     viewportState.scissorCount = 1;
     viewportState.viewportCount = 1;
@@ -517,7 +509,6 @@ int main(int argc, char **argv, char **envp)
     pipelinecreateInfo.pDynamicState = &dynamicState;
     pipelinecreateInfo.pColorBlendState = &colorBlendState;
     pipelinecreateInfo.pRasterizationState = &rasterizationState;
-    pipelinecreateInfo.pDepthStencilState = &depthStencilStateCreate; // I think this might cause issues since we don't have a depth attachment?
 
     array<VkPipelineShaderStageCreateInfo, 2> shaderStages{};
     // shader stages
