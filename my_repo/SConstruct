@@ -13,7 +13,7 @@ project_name = "vulkan_tutorial"
 output_folder = "bin/"
 
 # TODO Platform-independent Vulkan SDK path
-vulkan_sdk_dir = "/home/bigo/Downloads/1.3.216.0"
+vulkan_sdk_dir = "/opt/vulkan/"
 
 #------------------------------------------------------------------------------
 # my glsllang converter build
@@ -55,18 +55,18 @@ env.Append(LIBS = [
 env.Append(CPPPATH = [
 	"thirdparty/glfw/include",
     "./include",
-	"/home/bigo/Downloads/1.3.216.0/x86_64/include"
+	"$VULKAN_SDK/include"
 	"."
 ])
 env.Append(CPPDEFINES = [
 ])
-env.Append(VULKAN_SDK="/home/bigo/Downloads/1.3.216.0/x86_64")
+env.Append(VULKAN_SDK="$VULKAN_SDK")
 env.Append(LD_LIBRARY_PATH="$VULKAN_SDK/lib")
 env.Append(VK_LAYER_PATH="$VULKAN_SDK/etc/vulkan/explicit_layer.d")
 
 if platform == 'linux':
 
-	env.Append(CCFLAGS = ['-g','-O3', '-std=c++14'])
+	env.Append(CCFLAGS = ['-g','-O3', '-std=c++17'])
 	env.Append(LINKFLAGS = ['-Wl,-R,\'$$ORIGIN\''])
 	# TODO Linux setup
 #------------------------------------------------------------------------------
