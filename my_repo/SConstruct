@@ -13,7 +13,6 @@ project_name = "vulkan_tutorial"
 output_folder = "bin/"
 
 # TODO Platform-independent Vulkan SDK path
-vulkan_sdk_dir = "/opt/vulkan/"
 
 #------------------------------------------------------------------------------
 # my glsllang converter build
@@ -27,23 +26,10 @@ if ARGUMENTS.get('use_llvm', 'no') == 'yes':
 
 target = ARGUMENTS.get('target', 'release')
 platform = ARGUMENTS.get('p', 'linux')
+vpath = os.environ["VULKAN_SDK"]
+vulkan_sdk_dir = vpath
 
-#------------------------------------------------------------------------------
-if ARGUMENTS.get('compile_shaders', 'no') == 'yes':
 
-	def compile_shaders():
-		# TODO Platform-independent shader compilation
-		compiler_path = os.path.join(vulkan_sdk_dir, "x86_64/glslangValidator")
-		shaders = [
-			"shaders/default.frag",
-			"shaders/default.vert"
-		]
-		for shader in shaders:
-			print("Compiling shader ", shader)
-			target_path = os.path.join(output_folder, os.path.basename(shader) + '.spv')
-			subprocess.call([compiler_path, '-V', shader, '-o', target_path])
-
-	compile_shaders()
 
 #------------------------------------------------------------------------------
 #env['TARGET_ARCH'] = 'x86_64'
@@ -52,17 +38,20 @@ env.Append(LIBS = [
 	"vulkan",
 	"glfw"
 ])
+# env.Append(CPPPATH = [
+# 	"thirdparty/glfw/include",
+#     "./include",
+# 	"$VULKAN_SDK/include"
+# 	"."
+# ])
+
 env.Append(CPPPATH = [
-	"thirdparty/glfw/include",
-    "./include",
-	"$VULKAN_SDK/include"
-	"."
+	vpath+"/include"
+]
+)
+env.Append(LIBPATH=[
+	f"{vpath}/lib"
 ])
-env.Append(CPPDEFINES = [
-])
-env.Append(VULKAN_SDK="$VULKAN_SDK")
-env.Append(LD_LIBRARY_PATH="$VULKAN_SDK/lib")
-env.Append(VK_LAYER_PATH="$VULKAN_SDK/etc/vulkan/explicit_layer.d")
 
 if platform == 'linux':
 
