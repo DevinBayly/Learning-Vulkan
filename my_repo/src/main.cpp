@@ -19,6 +19,7 @@ const uint32_t HEIGHT = 600;
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
 const std::vector<const char *> validationLayers = {
+    "VK_LAYER_LUNARG_api_dump",
     "VK_LAYER_KHRONOS_validation"};
 
 const std::vector<const char *> deviceExtensions = {};
@@ -90,6 +91,9 @@ private:
     VkQueue graphicsQueue;
 
     std::vector<VkImage> renderImages;
+    VkDeviceMemory imMem;
+    VkImage imCopy;
+    VkDeviceMemory imCopyMem;
     VkFormat renderImageFormat;
     VkExtent2D renderImageExtent;
     std::vector<VkImageView> renderImageViews;
@@ -333,6 +337,7 @@ private:
         imInfo.samples = VK_SAMPLE_COUNT_1_BIT;
         imInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
         imInfo.imageType = VK_IMAGE_TYPE_2D;
+        imInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         renderImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
         imInfo.format = renderImageFormat;
         vkCreateImage(device, &imInfo, NULL, renderImages.data());
@@ -348,7 +353,6 @@ private:
         imAllocInfo.memoryTypeIndex = 0;
 
         // then bind the image to the data
-        VkDeviceMemory imMem;
         vkAllocateMemory(device, &imAllocInfo, NULL, &imMem);
         vkBindImageMemory(device, renderImages[0], imMem, 0);
     }
@@ -659,7 +663,7 @@ private:
         vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
         vkResetFences(device, 1, &inFlightFence);
 
-        uint32_t imageIndex=0;
+        uint32_t imageIndex = 0;
         // vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
         //  get next image for use
 
@@ -682,23 +686,200 @@ private:
         // submitInfo.signalSemaphoreCount = 1;
         // submitInfo.pSignalSemaphores = signalSemaphores;
         VkFenceCreateInfo fenceInfo{};
-        fenceInfo.flags =0;
+        fenceInfo.flags = 0;
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         VkFence fence;
-        vkCreateFence(device,&fenceInfo,NULL,&fence);
+        vkCreateFence(device, &fenceInfo, NULL, &fence);
 
-        VkResult res = vkQueueSubmit(graphicsQueue, 1, &submitInfo,fence);
+        VkResult res = vkQueueSubmit(graphicsQueue, 1, &submitInfo, fence);
         std::cout << "submit res is " << res << std::endl;
-        if ( res != VK_SUCCESS)
+        if (res != VK_SUCCESS)
         {
             throw std::runtime_error("failed to submit draw command buffer!");
         }
-        vkWaitForFences(device,1,&fence,VK_TRUE,UINT64_MAX);
+        vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
     }
 
-    void copyFrame() {
+    void copyFrame()
+    {
         // assuming that the rendering suceeded we need to create a copy image and then do the steps from the renderheadless to copy data from the frame buffer image to that one
-        
+        VkImageCreateInfo imInfo{};
+        imInfo.extent.width = renderImageExtent.width;
+        imInfo.extent.height = renderImageExtent.height;
+        imInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imInfo.extent.depth = 1;
+        imInfo.arrayLayers = 1;
+        imInfo.mipLevels = 1;
+        imInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        imInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imInfo.tiling = VK_IMAGE_TILING_LINEAR; // makes easier to copy later
+        imInfo.imageType = VK_IMAGE_TYPE_2D;
+        imInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        renderImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
+        imInfo.format = renderImageFormat;
+        vkCreateImage(device, &imInfo, NULL, &imCopy);
+        // bind that memory!
+
+        VkMemoryRequirements imMemReqs{};
+        vkGetImageMemoryRequirements(device, imCopy, &imMemReqs);
+        // create alloc info
+        VkMemoryAllocateInfo imAllocInfo{};
+        imAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        imAllocInfo.allocationSize = imMemReqs.size;
+        // this is likely to need changing later but on this card there's only one memory
+        imAllocInfo.memoryTypeIndex = 0;
+
+        // then bind the image to the data
+        vkAllocateMemory(device, &imAllocInfo, NULL, &imCopyMem);
+
+        vkBindImageMemory(device, imCopy, imCopyMem, 0);
+        setupCopyResources();
+    }
+    void setupCopyResources()
+    {
+
+        // Do the actual blit from the offscreen image to our host visible destination image
+        VkCommandBufferAllocateInfo cmdBufAllocateInfo = {};
+        cmdBufAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmdBufAllocateInfo.commandPool = commandPool;
+        cmdBufAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmdBufAllocateInfo.commandBufferCount = 1;
+
+        VkCommandBuffer copyCmd;
+        vkAllocateCommandBuffers(device, &cmdBufAllocateInfo, &copyCmd);
+        VkCommandBufferBeginInfo cmdBufInfo = {};
+        cmdBufInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        vkBeginCommandBuffer(copyCmd, &cmdBufInfo);
+
+        {
+            // Transition destination image to transfer destination layout
+            VkImageMemoryBarrier imMemBarrier{};
+            imMemBarrier.image = imCopy;
+            imMemBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            imMemBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            imMemBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            imMemBarrier.srcAccessMask = 0;
+            imMemBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            imMemBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            imMemBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            imMemBarrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+            vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 0,
+                                 0, NULL,
+                                 0, NULL,
+                                 1, &imMemBarrier);
+        }
+
+        // colorAttachment.image is already in VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, and does not need to be transitioned
+
+        VkImageCopy imageCopyRegion{};
+        imageCopyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageCopyRegion.srcSubresource.layerCount = 1;
+        imageCopyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        imageCopyRegion.dstSubresource.layerCount = 1;
+        imageCopyRegion.extent.width = renderImageExtent.width;
+        imageCopyRegion.extent.height = renderImageExtent.height;
+        imageCopyRegion.extent.depth = 1;
+
+        vkCmdCopyImage(
+            copyCmd,
+            renderImages[0], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            imCopy, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1,
+            &imageCopyRegion);
+        {
+            // Transition destination image to transfer destination layout
+            VkImageMemoryBarrier imMemBarrier{};
+            imMemBarrier.image = imCopy;
+            imMemBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            imMemBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            imMemBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            imMemBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+            imMemBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            imMemBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            imMemBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            imMemBarrier.subresourceRange = VkImageSubresourceRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+            vkCmdPipelineBarrier(copyCmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 0,
+                                 0, NULL,
+                                 0, NULL,
+                                 1, &imMemBarrier);
+        }
+        vkEndCommandBuffer(copyCmd);
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        // VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
+        // submitInfo.signalSemaphoreCount = 1;
+        // submitInfo.pSignalSemaphores = signalSemaphores;
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.flags = 0;
+        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        VkFence fence;
+        vkCreateFence(device, &fenceInfo, NULL, &fence);
+
+        VkResult res = vkQueueSubmit(graphicsQueue, 1, &submitInfo, fence);
+        std::cout << "submit res is " << res << std::endl;
+        if (res != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to submit draw command buffer!");
+        }
+        vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+        // Transition destination image to general layout, which is the required layout for mapping the image memory later on
+
+        // Get layout of the image (including row pitch)
+        VkImageSubresource subResource{};
+        subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        VkSubresourceLayout subResourceLayout;
+
+        vkGetImageSubresourceLayout(device, renderImages[0], &subResource, &subResourceLayout);
+
+        // Map image memory so we can start copying from it
+        const char * imagedata;
+        vkMapMemory(device,imCopyMem , 0, VK_WHOLE_SIZE, 0, (void **)&imagedata);
+        imagedata += subResourceLayout.offset;
+
+        const char* filename = "headless.ppm";
+			std::ofstream file(filename, std::ios::out | std::ios::binary);
+
+			// ppm header
+			file << "P6\n" << renderImageExtent.width << "\n" << renderImageExtent.height << "\n" << 255 << "\n";
+
+			// If source is BGR (destination is always RGB) and we can't use blit (which does automatic conversion), we'll have to manually swizzle color components
+			// Check if source is BGR and needs swizzle
+			std::vector<VkFormat> formatsBGR = { VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_B8G8R8A8_SNORM };
+			const bool colorSwizzle = (std::find(formatsBGR.begin(), formatsBGR.end(), VK_FORMAT_R8G8B8A8_UNORM) != formatsBGR.end());
+
+			// ppm binary pixel data
+			for (int32_t y = 0; y < renderImageExtent.height; y++) {
+				unsigned int *row = (unsigned int*)imagedata;
+				for (int32_t x = 0; x < renderImageExtent.width; x++) {
+					if (colorSwizzle) {
+						file.write((char*)row + 2, 1);
+						file.write((char*)row + 1, 1);
+						file.write((char*)row, 1);
+					}
+					else {
+						file.write((char*)row, 3);
+					}
+					row++;
+				}
+				imagedata += subResourceLayout.rowPitch;
+			}
+			file.close();
+
+
+			// Clean up resources
+			vkUnmapMemory(device, imCopyMem);
+			vkFreeMemory(device, imCopyMem, nullptr);
+			vkDestroyImage(device, imCopy, nullptr);
     }
 
     VkShaderModule createShaderModule(const std::vector<char> &code)
