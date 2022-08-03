@@ -1,7 +1,0 @@
-# ninja log v5
-1	548	1656092037626168525	CMakeFiles/3_0_DeviceHandshake.dir/source/main.cpp.o	753b2fc95aa81a4e
-0	182	1656092376496132394	../binaries/3_0_DeviceHandshake	d1d86018ac46ff4f
-1	1734	1656091956485365190	CMakeFiles/3_0_DeviceHandshake.dir/source/VulkanLED.cpp.o	b1d6bdf1d8a2d0c8
-0	1714	1656091956469365015	CMakeFiles/3_0_DeviceHandshake.dir/source/VulkanApplication.cpp.o	a08bfd7ef4959854
-1	1715	1656091956469365015	CMakeFiles/3_0_DeviceHandshake.dir/source/VulkanDevice.cpp.o	65bfdf3917875420
-1	1702	1656091956457364884	CMakeFiles/3_0_DeviceHandshake.dir/source/VulkanInstance.cpp.o	ff4b7af7556a3663
