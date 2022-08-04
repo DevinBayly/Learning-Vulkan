@@ -29,7 +29,6 @@ const bool enableValidationLayers = false;
 #else
 const bool enableValidationLayers = true;
 #endif
-
 VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDebugUtilsMessengerEXT *pDebugMessenger)
 {
     auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
@@ -124,7 +123,7 @@ private:
         createFramebuffers();
         createCommandPool();
         createCommandBuffer();
-        createSyncObjects();
+        //createSyncObjects();
     }
 
     void mainLoop()
@@ -268,6 +267,24 @@ private:
         }
     }
 
+    uint32_t getMemoryTypeIndex(uint32_t typeBits, VkMemoryPropertyFlags properties)
+    {
+        VkPhysicalDeviceMemoryProperties deviceMemoryProperties;
+        vkGetPhysicalDeviceMemoryProperties(physicalDevice, &deviceMemoryProperties);
+        for (uint32_t i = 0; i < deviceMemoryProperties.memoryTypeCount; i++)
+        {
+            if ((typeBits & 1) == 1)
+            {
+                if ((deviceMemoryProperties.memoryTypes[i].propertyFlags & properties) == properties)
+                {
+                    std::cout << "memory type return is " << i << std::endl;
+                    return i;
+                }
+            }
+            typeBits >>= 1;
+        }
+        return 0;
+    }
     void createLogicalDevice()
     {
         QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
@@ -278,6 +295,7 @@ private:
         float queuePriority = 1.0f;
         for (uint32_t queueFamily : uniqueQueueFamilies)
         {
+            std::cout << "unique queue fam " << queueFamily << std::endl;
             VkDeviceQueueCreateInfo queueCreateInfo{};
             queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
             queueCreateInfo.queueFamilyIndex = queueFamily;
@@ -309,11 +327,16 @@ private:
             createInfo.enabledLayerCount = 0;
         }
 
+
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(physicalDevice,&props);
+        std::cout << "selected device name is " << props.deviceName << std::endl;
         if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create logical device!");
         }
 
+        std::cout << "setting the queue using graphics family indices " << indices.graphicsFamily.value() << std::endl; 
         vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
     }
 
@@ -335,9 +358,8 @@ private:
         imInfo.mipLevels = 1;
         imInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
         imInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        imInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imInfo.tiling = VK_IMAGE_TILING_LINEAR;
         imInfo.imageType = VK_IMAGE_TYPE_2D;
-        imInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         renderImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
         imInfo.format = renderImageFormat;
         vkCreateImage(device, &imInfo, NULL, renderImages.data());
@@ -350,7 +372,7 @@ private:
         imAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         imAllocInfo.allocationSize = imMemReqs.size;
         // this is likely to need changing later but on this card there's only one memory
-        imAllocInfo.memoryTypeIndex = 0;
+        imAllocInfo.memoryTypeIndex = getMemoryTypeIndex(imMemReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
         // then bind the image to the data
         vkAllocateMemory(device, &imAllocInfo, NULL, &imMem);
@@ -360,6 +382,7 @@ private:
     {
         renderImageViews.resize(renderImages.size());
 
+        std::cout << "number of image views" << renderImageViews.size() << std::endl;
         for (size_t i = 0; i < renderImages.size(); i++)
         {
             VkImageViewCreateInfo createInfo{};
@@ -367,10 +390,6 @@ private:
             createInfo.image = renderImages[i];
             createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
             createInfo.format = renderImageFormat;
-            createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-            createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-            createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-            createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
             createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
             createInfo.subresourceRange.baseMipLevel = 0;
             createInfo.subresourceRange.levelCount = 1;
@@ -394,7 +413,8 @@ private:
         colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        // colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 
         VkAttachmentReference colorAttachmentRef{};
         colorAttachmentRef.attachment = 0;
@@ -406,12 +426,25 @@ private:
         subpass.pColorAttachments = &colorAttachmentRef;
 
         VkSubpassDependency dependency{};
+        // dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        // dependency.dstSubpass = 0;
+        // dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        // dependency.srcAccessMask = 0;
+        // dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        // dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+        // means wait on all passes that came before
         dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
         dependency.dstSubpass = 0;
-        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.srcAccessMask = 0;
+        dependency.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        // these are the stages of the pass that can't happen until the src is finished
         dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        /// type of memory access needed at the start of our program?
+        // I guess since we aren't specifying any src subpass then this might not be critical
+        dependency.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+        // when we do our dst pass we want color attachment to be read write
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
         VkRenderPassCreateInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -481,19 +514,13 @@ private:
         multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
         VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorBlendAttachment.colorWriteMask = 0xf;
         colorBlendAttachment.blendEnable = VK_FALSE;
 
         VkPipelineColorBlendStateCreateInfo colorBlending{};
         colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        colorBlending.logicOpEnable = VK_FALSE;
-        colorBlending.logicOp = VK_LOGIC_OP_COPY;
         colorBlending.attachmentCount = 1;
         colorBlending.pAttachments = &colorBlendAttachment;
-        colorBlending.blendConstants[0] = 0.0f;
-        colorBlending.blendConstants[1] = 0.0f;
-        colorBlending.blendConstants[2] = 0.0f;
-        colorBlending.blendConstants[3] = 0.0f;
 
         std::vector<VkDynamicState> dynamicStates = {
             VK_DYNAMIC_STATE_VIEWPORT,
@@ -526,7 +553,6 @@ private:
         pipelineInfo.pDynamicState = &dynamicState;
         pipelineInfo.layout = pipelineLayout;
         pipelineInfo.renderPass = renderPass;
-        pipelineInfo.subpass = 0;
         pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
         if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS)
@@ -605,17 +631,18 @@ private:
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = renderPass;
+        std::cout << "image index supplied to render pass was " << imageIndex << std::endl;
         renderPassInfo.framebuffer = renderImageBuffers[imageIndex];
         renderPassInfo.renderArea.offset = {0, 0};
+        std::cout << "recording cmd extent render is "<< renderImageExtent.width <<"x" << renderImageExtent.height << std::endl;
         renderPassInfo.renderArea.extent = renderImageExtent;
 
-        VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+        VkClearValue clearColor = {{{1.0f, 0.0f, 0.0f, 1.0f}}};
         renderPassInfo.clearValueCount = 1;
         renderPassInfo.pClearValues = &clearColor;
 
         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
         VkViewport viewport{};
         viewport.x = 0.0f;
@@ -630,6 +657,7 @@ private:
         scissor.offset = {0, 0};
         scissor.extent = renderImageExtent;
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
         vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
@@ -660,8 +688,8 @@ private:
 
     void drawFrame()
     {
-        vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
-        vkResetFences(device, 1, &inFlightFence);
+        // vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
+        // vkResetFences(device, 1, &inFlightFence);
 
         uint32_t imageIndex = 0;
         // vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
@@ -698,6 +726,9 @@ private:
             throw std::runtime_error("failed to submit draw command buffer!");
         }
         vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkDeviceWaitIdle(device);
+        std::cout << "pause between render and copy";
+        getchar();
     }
 
     void copyFrame()
@@ -727,7 +758,8 @@ private:
         imAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         imAllocInfo.allocationSize = imMemReqs.size;
         // this is likely to need changing later but on this card there's only one memory
-        imAllocInfo.memoryTypeIndex = 0;
+        // imAllocInfo.memoryTypeIndex = 0;
+        imAllocInfo.memoryTypeIndex = getMemoryTypeIndex(imMemReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
         // then bind the image to the data
         vkAllocateMemory(device, &imAllocInfo, NULL, &imCopyMem);
@@ -814,7 +846,7 @@ private:
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffer;
+        submitInfo.pCommandBuffers = &copyCmd;
 
         // VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
         // submitInfo.signalSemaphoreCount = 1;
@@ -832,6 +864,7 @@ private:
             throw std::runtime_error("failed to submit draw command buffer!");
         }
         vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
+        vkDeviceWaitIdle(device);
         // Transition destination image to general layout, which is the required layout for mapping the image memory later on
 
         // Get layout of the image (including row pitch)
@@ -842,44 +875,50 @@ private:
         vkGetImageSubresourceLayout(device, renderImages[0], &subResource, &subResourceLayout);
 
         // Map image memory so we can start copying from it
-        const char * imagedata;
-        vkMapMemory(device,imCopyMem , 0, VK_WHOLE_SIZE, 0, (void **)&imagedata);
+        const char *imagedata;
+        vkMapMemory(device, imCopyMem, 0, VK_WHOLE_SIZE, 0, (void **)&imagedata);
         imagedata += subResourceLayout.offset;
 
-        const char* filename = "headless.ppm";
-			std::ofstream file(filename, std::ios::out | std::ios::binary);
+        const char *filename = "headless.ppm";
+        std::ofstream file(filename, std::ios::out | std::ios::binary);
 
-			// ppm header
-			file << "P6\n" << renderImageExtent.width << "\n" << renderImageExtent.height << "\n" << 255 << "\n";
+        // ppm header
+        file << "P6\n"
+             << renderImageExtent.width << "\n"
+             << renderImageExtent.height << "\n"
+             << 255 << "\n";
 
-			// If source is BGR (destination is always RGB) and we can't use blit (which does automatic conversion), we'll have to manually swizzle color components
-			// Check if source is BGR and needs swizzle
-			std::vector<VkFormat> formatsBGR = { VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_B8G8R8A8_SNORM };
-			const bool colorSwizzle = (std::find(formatsBGR.begin(), formatsBGR.end(), VK_FORMAT_R8G8B8A8_UNORM) != formatsBGR.end());
+        // If source is BGR (destination is always RGB) and we can't use blit (which does automatic conversion), we'll have to manually swizzle color components
+        // Check if source is BGR and needs swizzle
+        std::vector<VkFormat> formatsBGR = {VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_B8G8R8A8_SNORM};
+        const bool colorSwizzle = (std::find(formatsBGR.begin(), formatsBGR.end(), VK_FORMAT_R8G8B8A8_UNORM) != formatsBGR.end());
 
-			// ppm binary pixel data
-			for (int32_t y = 0; y < renderImageExtent.height; y++) {
-				unsigned int *row = (unsigned int*)imagedata;
-				for (int32_t x = 0; x < renderImageExtent.width; x++) {
-					if (colorSwizzle) {
-						file.write((char*)row + 2, 1);
-						file.write((char*)row + 1, 1);
-						file.write((char*)row, 1);
-					}
-					else {
-						file.write((char*)row, 3);
-					}
-					row++;
-				}
-				imagedata += subResourceLayout.rowPitch;
-			}
-			file.close();
+        // ppm binary pixel data
+        for (int32_t y = 0; y < renderImageExtent.height; y++)
+        {
+            unsigned int *row = (unsigned int *)imagedata;
+            for (int32_t x = 0; x < renderImageExtent.width; x++)
+            {
+                if (colorSwizzle)
+                {
+                    file.write((char *)row + 2, 1);
+                    file.write((char *)row + 1, 1);
+                    file.write((char *)row, 1);
+                }
+                else
+                {
+                    file.write((char *)row, 3);
+                }
+                row++;
+            }
+            imagedata += subResourceLayout.rowPitch;
+        }
+        file.close();
 
-
-			// Clean up resources
-			vkUnmapMemory(device, imCopyMem);
-			vkFreeMemory(device, imCopyMem, nullptr);
-			vkDestroyImage(device, imCopy, nullptr);
+        // Clean up resources
+        vkUnmapMemory(device, imCopyMem);
+        vkFreeMemory(device, imCopyMem, nullptr);
+        vkDestroyImage(device, imCopy, nullptr);
     }
 
     VkShaderModule createShaderModule(const std::vector<char> &code)
@@ -989,11 +1028,14 @@ private:
         {
             if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
             {
+
                 indices.graphicsFamily = i;
             }
+            std::cout << "queue indices "<< i << std::endl;
 
             if (indices.isComplete())
             {
+                std::cout << "reporting complete "<< std::endl;
                 break;
             }
 
