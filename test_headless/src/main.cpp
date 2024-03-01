@@ -1,6 +1,6 @@
 // for creating a new repo branch
 #define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
+#include <GLFW/glfw3.h> // QUESTION, what is glfw really doing for us if we aren't showing a window on a machine?
 
 #include <iostream>
 #include <fstream>
@@ -463,6 +463,7 @@ private:
 
     void createGraphicsPipeline()
     {
+        
         auto vertShaderCode = readFile("src/vert.spv");
         auto fragShaderCode = readFile("src/frag.spv");
 
@@ -637,7 +638,7 @@ private:
         std::cout << "recording cmd extent render is "<< renderImageExtent.width <<"x" << renderImageExtent.height << std::endl;
         renderPassInfo.renderArea.extent = renderImageExtent;
 
-        VkClearValue clearColor = {{{1.0f, 0.0f, 0.0f, 1.0f}}};
+        VkClearValue clearColor = {{{0.0f, 1.0f, 0.0f, 1.0f}}};
         renderPassInfo.clearValueCount = 1;
         renderPassInfo.pClearValues = &clearColor;
 
@@ -727,7 +728,7 @@ private:
         }
         vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX);
         vkDeviceWaitIdle(device);
-        std::cout << "pause between render and copy";
+        std::cout << "pause between render and copy"; // QUESTION help me understand why this is needed and what we would have happen if it wasn't here
         getchar();
     }
 
@@ -879,7 +880,7 @@ private:
         vkMapMemory(device, imCopyMem, 0, VK_WHOLE_SIZE, 0, (void **)&imagedata);
         imagedata += subResourceLayout.offset;
 
-        const char *filename = "headless.ppm";
+        const char *filename = "myheadless.ppm";
         std::ofstream file(filename, std::ios::out | std::ios::binary);
 
         // ppm header
