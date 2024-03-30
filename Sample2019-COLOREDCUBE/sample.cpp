@@ -393,13 +393,12 @@ int				NumRenders;			// how many times the render loop has been called
 bool				Paused;				// true means don't animate
 float				Scale;				// scaling factor
 double				Time;
-bool				Verbose;			// true = write messages into a file
+bool				Verbose=true;			// true = write messages into a file
 int				Xmouse, Ymouse;			// mouse values
 float				Xrot, Yrot;			// rotation angles in degrees
 bool				UseIndexBuffer;			// true = use both vertex and index buffer, false = just use vertex buffer
 bool				UseLighting;			// true = use lighting for display
 bool				UseRotate;			// true = rotate-animate, false = use mouse for interaction
-
 
 
 
@@ -487,11 +486,13 @@ short				ReadShort( FILE * );
 // *************
 
 
+
 int
 main( int argc, char * argv[ ] )
 {
 	Width  = 1536;
 	Height = 1536;
+	fprintf(stdout,"starting up");
 
 #ifdef _WIN32
 	errno_t err = fopen_s( &FpDebug, DEBUGFILE, "w" );
@@ -696,6 +697,7 @@ Init01Instance( )
 		const char * instanceExtensionsWanted[ ] =
 		{
 			"VK_KHR_surface",
+			"VK_KHR_xcb_surface",
 #ifdef _WIN32
 			"VK_KHR_win32_surface",
 #endif
@@ -2512,7 +2514,7 @@ Init12SpirvShader( std::string filename, VkShaderModule * pShaderModule )
 	HERE_I_AM( "Init12SpirvShader" );
 
 	FILE *fp;
-	(void) fopen_s( &fp, filename.c_str(), "rb");
+	fp = fopen( filename.c_str( ), "rb" );
 	if( fp == NULL )
 	{
 		fprintf( FpDebug, "Cannot open shader file '%s'\n", filename.c_str( ) );

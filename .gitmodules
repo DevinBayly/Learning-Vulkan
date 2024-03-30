@@ -1,0 +1,3 @@
+[submodule "VulkanTutorial"]
+	path = VulkanTutorial
+	url = https://github.com/Overv/VulkanTutorial.git
