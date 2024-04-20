@@ -910,22 +910,8 @@ Init03PhysicalDeviceAndGetQueueFamilyProperties( )
 			integratedSelect = i;
 	}
 
-	int which = -1;
-	if( discreteSelect >= 0 )
-	{
-		which = discreteSelect;
-		PhysicalDevice = physicalDevices[which];
-	}
-	else if( integratedSelect >= 0 )
-	{
-		which = integratedSelect;
-		PhysicalDevice = physicalDevices[which];
-	}
-	else
-	{
-		fprintf( FpDebug, "Could not select a Physical Device\n" );
-		return VK_SHOULD_EXIT;
-	}
+	int which = 0;
+  PhysicalDevice = physicalDevices[which];
 
 	delete[ ] physicalDevices;
 
@@ -2149,7 +2135,8 @@ VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR = 1000111001,
 	{
 		fprintf( FpDebug, "The Present Mode to use = %d\n", thePresentMode );
 	}
-	
+  // this appears to be a suitable override to make things get past the frame buffer setup on the HPC
+  thePresentMode = presentModes[0];// test out the immediate then the FIFO	
 	delete [ ] presentModes;
 
 
@@ -2405,11 +2392,13 @@ Init11Framebuffers( )
 	frameBufferAttachments[0] = PresentImageViews[0];
 	frameBufferAttachments[1] = DepthStencilImageView;
 	result = vkCreateFramebuffer( LogicalDevice, IN &vfbci, PALLOCATOR, OUT &Framebuffers[0] );
+  PrintVkError(result);
+  fflush(FpDebug);
 	REPORT( "vkCreateFrameBuffer - 0" );
 
 	frameBufferAttachments[0] = PresentImageViews[1];
 	frameBufferAttachments[1] = DepthStencilImageView;
-	result = vkCreateFramebuffer( LogicalDevice, IN &vfbci, PALLOCATOR, OUT &Framebuffers[1] );
+	result = vkCreateFramebuffer( LogicalDevice, IN &vfbci,PALLOCATOR, OUT &Framebuffers[1] );
 	REPORT( "vkCreateFrameBuffer - 1" );
 
 	return result;
