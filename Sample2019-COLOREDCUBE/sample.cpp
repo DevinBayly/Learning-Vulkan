@@ -1,3 +1,5 @@
+// ****************************************************************************************************
+// This is a program for teaching Vulkan
 // As such, it is deliberately verbose so that it is obvious (as possible, at least) what is being done
 //
 // Mike Bailey, Oregon State University
@@ -33,7 +35,7 @@
 //	#endif
 //
 //
-// Latest update: January 2, 2023
+// Latest update: January 6, 2023
 // ****************************************************************************************************
 
 
@@ -62,8 +64,6 @@
 
 #ifdef _WIN32
 #include <io.h>
-#pragma warning(disable:4996)
-#pragma warning(disable:26451)
 #endif
 
 #ifndef _WIN32
@@ -82,6 +82,9 @@ int	fopen_s( FILE**, const char *, const char * );
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/matrix_inverse.hpp"
 //#include "glm/gtc/type_ptr.hpp"
+
+//VMA:
+//#include "vk_mem_alloc.h"
 
 #ifdef _WIN32
 //#pragma comment(linker, "/subsystem:windows")
@@ -113,12 +116,13 @@ int	fopen_s( FILE**, const char *, const char * );
 #define BILLION			1000000000L
 #define TEXTURE_COUNT		1
 #define APP_SHORT_NAME		"Cube Sample"
-#define APP_LONG_NAME		"Vulkan Obj+KeyTime Sample Program"
+#define APP_LONG_NAME		"Vulkan Cube Sample Program"
 
-#define MAXSECONDS		30.f
+#define SECONDS_PER_CYCLE	3.f
 #define FRAME_LAG		2
 #define SWAPCHAINIMAGECOUNT	2
 
+#define NUM_INSTANCES		16
 
 
 // multiplication factors for input interaction:
@@ -227,7 +231,6 @@ typedef struct MyTexture
 
 #include "vkuLoadObjFile.h"
 #include "vkuKeytime.h"
-
 
 // bmp file headers:
 struct bmfh
@@ -392,14 +395,12 @@ int				NumRenders;			// how many times the render loop has been called
 bool				Paused;				// true means don't animate
 float				Scale;				// scaling factor
 double				Time;
-bool				Verbose;			// true = write messages into a file
+bool				Verbose=true;			// true = write messages into a file
 int				Xmouse, Ymouse;			// mouse values
 float				Xrot, Yrot;			// rotation angles in degrees
 bool				UseIndexBuffer;			// true = use both vertex and index buffer, false = just use vertex buffer
 bool				UseLighting;			// true = use lighting for display
 bool				UseRotate;			// true = rotate-animate, false = use mouse for interaction
-
-
 
 
 
@@ -487,11 +488,13 @@ short				ReadShort( FILE * );
 // *************
 
 
+
 int
 main( int argc, char * argv[ ] )
 {
 	Width  = 1024;
 	Height = 1024;
+	fprintf(stdout,"starting up");
 
 #ifdef _WIN32
 	errno_t err = fopen_s( &FpDebug, DEBUGFILE, "w" );
@@ -520,10 +523,6 @@ main( int argc, char * argv[ ] )
 	{
 		glfwPollEvents( );
 		Time = glfwGetTime( );		// elapsed time, in double-precision seconds
-
-		// do this for cyclic animation:
-		// do the fmod thing righ there:
-
 		UpdateScene( );
 		RenderScene( );
 		if( NeedToExit )
@@ -568,11 +567,8 @@ InitGraphics( )
 
 	Init05UniformBuffer( sizeof(Object),   	&MyObjectUniformBuffer );
 	Fill05DataBuffer( MyObjectUniformBuffer,	(void *) &Object );
-  fprintf(FpDebug, "test");
-  fflush(FpDebug);
 
-	MyVertexDataBuffer = VkuLoadObjFile((char *)"./cat.obj");
-
+	MyVertexDataBuffer = VkuLoadObjFile((char *)"cat.obj");
 	//Init05MyVertexDataBuffer(  sizeof(VertexData), &MyVertexDataBuffer );
 	//Fill05DataBuffer( MyVertexDataBuffer,			(void *) VertexData );
 
@@ -707,6 +703,7 @@ Init01Instance( )
 		const char * instanceExtensionsWanted[ ] =
 		{
 			"VK_KHR_surface",
+			"VK_KHR_xcb_surface",
 #ifdef _WIN32
 			"VK_KHR_win32_surface",
 #endif
@@ -919,8 +916,9 @@ Init03PhysicalDeviceAndGetQueueFamilyProperties( )
 			integratedSelect = i;
 	}
 
-  int which = 0;
+	int which = 0;
   PhysicalDevice = physicalDevices[which];
+
 	delete[ ] physicalDevices;
 
 	vkGetPhysicalDeviceProperties( PhysicalDevice, OUT &PhysicalDeviceProperties );
@@ -1858,7 +1856,10 @@ Init07TextureBufferAndFillFromBmpFile( IN std::string filename, OUT MyTexture * 
 
 	// extra padding bytes:
 
-	int numExtra =  4*(( (3*InfoHeader.biWidth)+3)/4) - 3*InfoHeader.biWidth;
+	int requiredRowSizeInBytes = 4 * ( ( InfoHeader.biBitCount*InfoHeader.biWidth + 31 ) / 32 );
+    int myRowSizeInBytes = ( InfoHeader.biBitCount*InfoHeader.biWidth + 7 ) / 8;
+        // int oldNumExtra =  4*(( (3*InfoHeader.biWidth)+3)/4) - 3*InfoHeader.biWidth;
+    int numExtra = requiredRowSizeInBytes - myRowSizeInBytes;
 
 	// we do not support compression:
 
@@ -1872,6 +1873,7 @@ Init07TextureBufferAndFillFromBmpFile( IN std::string filename, OUT MyTexture * 
 	rewind( fp );
 	fseek( fp, 14+40, SEEK_SET );
 
+        // we can handle 24 bits of direct color:
 	if( InfoHeader.biBitCount == 24 )
 	{
 		unsigned char *tp = texture;
@@ -1891,6 +1893,49 @@ Init07TextureBufferAndFillFromBmpFile( IN std::string filename, OUT MyTexture * 
 			}
 		}
 	}
+
+
+        // we can also handle 8 bits of indirect color:
+        if( InfoHeader.biBitCount == 8 && InfoHeader.biClrUsed == 256 )
+        {
+                struct rgba32
+                {
+                        unsigned char r, g, b, a;
+                };
+                struct rgba32 *colorTable = new struct rgba32[ InfoHeader.biClrUsed ];
+
+                rewind( fp );
+                fseek( fp, sizeof(struct bmfh) + InfoHeader.biSize - 2, SEEK_SET );
+                for( int c = 0; c < InfoHeader.biClrUsed; c++ )
+                {
+                        colorTable[c].r = fgetc( fp );
+                        colorTable[c].g = fgetc( fp );
+                        colorTable[c].b = fgetc( fp );
+                        colorTable[c].a = fgetc( fp );
+                }
+
+                rewind( fp );
+                fseek( fp, 14+40, SEEK_SET );
+                int t;
+                unsigned char *tp;
+                for( t = 0, tp = texture; t < (int)texHeight; t++ )
+                {
+                        for( int s = 0; s < (int)texWidth; s++, tp += 3 )
+                        {
+                                int index = fgetc( fp );
+                                *(tp+0) = colorTable[index].r;  // r
+                                *(tp+1) = colorTable[index].g;  // g
+                                *(tp+2) = colorTable[index].b;  // b
+                        }
+
+                        for( int e = 0; e < numExtra; e++ )
+                        {
+                                fgetc( fp );
+                        }
+                }
+
+                delete[ ] colorTable;
+        }
 	fclose( fp );
 
 	pMyTexture->width = texWidth;
@@ -1954,8 +1999,6 @@ vsc.VkSurfaceTransformFlagBitsKHR    currentTransform;
 vsc.VkCompositeAlphaFlagsKHR         supportedCompositeAlpha;
 vsc.VkImageUsageFlags                supportedUsageFlags;
 #endif
-  fprintf(FpDebug, "test");
-  fflush(FpDebug);
 
 	VkExtent2D surfaceRes = vsc.currentExtent;
 	fprintf( FpDebug, "\nvkGetPhysicalDeviceSurfaceCapabilitiesKHR:\n" );
@@ -2098,7 +2141,7 @@ VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR = 1000111001,
 	{
 		fprintf( FpDebug, "The Present Mode to use = %d\n", thePresentMode );
 	}
-	
+  // this appears to be a suitable override to make things get past the frame buffer setup on the HPC
   thePresentMode = presentModes[0];// test out the immediate then the FIFO	
 	delete [ ] presentModes;
 
@@ -2355,11 +2398,13 @@ Init11Framebuffers( )
 	frameBufferAttachments[0] = PresentImageViews[0];
 	frameBufferAttachments[1] = DepthStencilImageView;
 	result = vkCreateFramebuffer( LogicalDevice, IN &vfbci, PALLOCATOR, OUT &Framebuffers[0] );
+  PrintVkError(result);
+  fflush(FpDebug);
 	REPORT( "vkCreateFrameBuffer - 0" );
 
 	frameBufferAttachments[0] = PresentImageViews[1];
 	frameBufferAttachments[1] = DepthStencilImageView;
-	result = vkCreateFramebuffer( LogicalDevice, IN &vfbci, PALLOCATOR, OUT &Framebuffers[1] );
+	result = vkCreateFramebuffer( LogicalDevice, IN &vfbci,PALLOCATOR, OUT &Framebuffers[1] );
 	REPORT( "vkCreateFrameBuffer - 1" );
 
 	return result;
@@ -3987,8 +4032,8 @@ RenderScene( )
 	const uint32_t vertexCount = (int)MyVertexDataBuffer.size / sizeof(struct vertex);
     //const uint32_t indexCount  = sizeof(JustIndexData)  / sizeof(JustIndexData[0]);
     //const uint32_t instanceCount = 1;
-	const uint32_t indexCount = 0;
-	const uint32_t instanceCount = 1;
+    const uint32_t indexCount = 0;
+    const uint32_t instanceCount = 1;
     const uint32_t firstVertex = 0;
     const uint32_t firstIndex = 0;
     const uint32_t firstInstance = 0;
@@ -4088,7 +4133,7 @@ Reset( )
 	Paused = false;
 	Scale  = 1.0;
 	UseIndexBuffer = false;
-	UseLighting = true;
+	UseLighting = false;
 	UseRotate = true;
 	Verbose = true;
 	Xrot = Yrot = 0.;
@@ -4113,9 +4158,7 @@ Reset( )
 	Scene.uLightPos = glm::vec4( -50., -50., 10., 1. );
 	Scene.uLightColor = glm::vec4( 1., 1., 1., 1. );
 	Scene.uLightKaKdKs = glm::vec4( 0.2f, 0.5f, 0.3f, 1. );
-	glm::vec4	uLightPos;
-	glm::vec4	uLightColor;
-	glm::vec4	uLightKaKdKs;
+
 
 	// initialize the object stuff:
 
@@ -4158,15 +4201,19 @@ UpdateScene( )
 		if (!Paused)
 		{
 			const glm::vec3 axis = glm::vec3(0., 1., 0.);
-			//Scene.uSceneOrient = glm::rotate(glm::mat4(), (float)glm::radians(360.f*Time / SECONDS_PER_CYCLE), axis);
+			Scene.uSceneOrient = glm::rotate(glm::mat4(), (float)glm::radians(360.f*Time / SECONDS_PER_CYCLE), axis);
 			Scene.uSceneOrient = glm::scale(Scene.uSceneOrient, glm::vec3(Scale, Scale, Scale));
 		}
 
 	}
 	else
 	{
+
+
 		Scene.uSceneOrient = glm::mat4();		// identity
+
 		Scene.uSceneOrient = glm::scale(Scene.uSceneOrient, glm::vec3(Scale, Scale, Scale));
+
 		Scene.uSceneOrient = glm::rotate(Scene.uSceneOrient, Yrot, glm::vec3(0., 1., 0.));
 		Scene.uSceneOrient = glm::rotate(Scene.uSceneOrient, Xrot, glm::vec3(1., 0., 0.));
 		// done this way, the Xrot is applied first, then the Yrot, then the Scale
@@ -4180,18 +4227,22 @@ UpdateScene( )
 
 	// possibly change the light position:
 
-	Scene.uLightPos = glm::vec4( 10., 10., 10., 1. );
-	Scene.uLightColor = glm::vec4( 1., 1., 1., 1. );
-	Scene.uLightKaKdKs = glm::vec4( 0.2f, 0.4f, 0.4f, 1. );
+        //Scene.uKaKdKs = glm::vec3( 0.2f, 0.4f, 0.4f );
+        //Scene.uEyePos = glm::vec4( eye, 1. );
+        //Scene.uLightPos = glm::vec4( 10., 10., 10., 1. );
+        //Scene.uLightColor = glm::vec3( 1., 1., 1. );
+
 	Fill05DataBuffer( MySceneUniformBuffer, (void *) &Scene );
 
 
-	// change the object matrix:
+	// change the normal matrix:
 
-	float time = (float)Time;
-	// set the elements of Object, such as uModel, uNormal, uColor, and uShininess here:
+	Object.uModel  = glm::mat4( 1. );
+	Object.uNormal = glm::mat4(glm::inverseTranspose(glm::mat3(Scene.uSceneOrient*Object.uModel)));
+        //Object.uColor = glm::vec4( 0., 1., 0., 1. );
+        //Object.uShininess = 10.f;
+	Fill05DataBuffer( MyObjectUniformBuffer, (void *) &Object );
 
-	Fill05DataBuffer( MyObjectUniformBuffer, IN (void *) &Object );
 }
 
 
@@ -4250,38 +4301,6 @@ GLFWKeyboard( GLFWwindow * window, int key, int scancode, int action, int mods )
 		
 		switch (key)
 		{
-			case '1':
-			case '2':
-			case '3':
-			case '4':
-			case '5':
-			case '6':
-			case '7':
-			case '8':
-			case '9':
-				NumInstances = key - '0';
-				break;
-
-			case 'a':
-			case 'b':
-			case 'c':
-			case 'd':
-			case 'e':
-			case 'f':
-			case 'g':
-				NumInstances = 10 + key - 'a';
-				break;
-
-			case 'A':
-			case 'B':
-			case 'C':
-			case 'D':
-			case 'E':
-			case 'F':
-			case 'G':
-				NumInstances = 10 + key - 'A';
-				break;
-
 			case 'i':
 			case 'I':
 				UseIndexBuffer = ! UseIndexBuffer;
